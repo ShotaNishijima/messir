@@ -67,6 +67,11 @@ samuika = function(
     stop("length(beta_fix) does not match the number of beta_key")
   }
 
+  index_data = index_data %>%
+    mutate(Index_ID = Index_ID-min(Index_ID),Stock_ID = Stock_ID-min(Stock_ID))
+  catch_data = catch_data %>%
+    mutate(Stock_ID = Stock_ID-min(Stock_ID))
+
   weight_mat = weight_data %>% select(-Year) %>% as.matrix() %>% t()
   NYear=ncol(weight_mat)
   NStock=nrow(weight_mat)
@@ -120,7 +125,6 @@ samuika = function(
       for(i in 2:NStock) recSD_key[i,] <- max(recSD_key[i-1,])+1+recSD_key[i,]
     }
   }
-
 
   NCatch = nrow(catch_data)
   Catch = catch_data$Catch_biomass %>% as.numeric()
@@ -261,6 +265,7 @@ samuika = function(
   RES$input = arglist
   RES$obj = f
   RES$opt = fit
+  RES$par_list = f$env$parList(fit$par)
   RES$loglik <- loglik <- -(fit$objective)
   RES$N <- N <- NCatch+NIndex
   RES$npar <- npar <- length(fit$par)
