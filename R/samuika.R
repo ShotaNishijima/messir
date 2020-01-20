@@ -67,6 +67,11 @@ samuika = function(
     stop("length(beta_fix) does not match the number of beta_key")
   }
 
+  index_data = index_data %>%
+    mutate(Index_ID = Index_ID-min(Index_ID),Stock_ID = Stock_ID-min(Stock_ID))
+  catch_data = catch_data %>%
+    mutate(Stock_ID = Stock_ID-min(Stock_ID))
+
   weight_mat = weight_data %>% select(-Year) %>% as.matrix() %>% t()
   NYear=ncol(weight_mat)
   NStock=nrow(weight_mat)
@@ -121,7 +126,6 @@ samuika = function(
     }
   }
 
-
   NCatch = nrow(catch_data)
   Catch = catch_data$Catch_biomass %>% as.numeric()
   Catch_key = catch_data %>%
@@ -173,6 +177,8 @@ samuika = function(
     }
   }
 
+  trans_rho_init = log((1-rec_rho_init)/(1+rec_rho_init))
+
   data_list = list(NYear=NYear,NStock=NStock,M=M_mat,Weight=weight_mat,
                    SDlogF_key=SDlogF_key,logF_diff=logF_diff,
                    SR=SR_tmb,reca_key=reca_key,recb_key=recb_key,recSD_key=recSD_key,
@@ -186,7 +192,7 @@ samuika = function(
     rec_loga = rep_len(log(reca_init),max(reca_key)+1),
     rec_logb = rep_len(log(recb_init),max(recb_key)+1),
     rec_logSD = rep_len(log(recSD_init),max(recSD_key)+1),
-    rec_rho = rec_rho_init,
+    trans_rho = trans_rho_init,
     logSDlogC = rep_len(log(SDlogC_init),max(Catch_key[,3])+1),
     logQ = rep_len(log(q_init),max(Index_key[,3])+1),
     logSDcpue = rep_len(log(SDcpue_init), max(Index_key[,4])+1),
@@ -212,7 +218,7 @@ samuika = function(
       cat("'rec_logSD' is fixed at", rep_len(log(recSD_init),max(recSD_key)+1),"\n")
     }
     if ("rec_rho" %in% fixed_par) {
-      map$rec_rho = factor(NA)
+      map$trans_rho = factor(NA)
       cat("'rec_rho' is fixed at", rec_rho_init,"\n")
     }
     if ("SDlogF" %in% fixed_par) {
@@ -237,7 +243,7 @@ samuika = function(
     }
   }
   if (NStock == 1) {
-    map$rec_rho = factor(NA)
+    map$trans_rho = factor(NA)
     cat("'rec_rho' is automatically fixed at", rec_rho_init,"because the number of stocks is one","\n")
   }
 
@@ -259,6 +265,7 @@ samuika = function(
   RES$input = arglist
   RES$obj = f
   RES$opt = fit
+  RES$par_list = f$env$parList(fit$par)
   RES$loglik <- loglik <- -(fit$objective)
   RES$N <- N <- NCatch+NIndex
   RES$npar <- npar <- length(fit$par)
@@ -278,7 +285,8 @@ samuika = function(
     rec_pars$b = exp(f$env$parList(fit$par)$rec_logb)
     rec_pars$sd = exp(f$env$parList(fit$par)$rec_logSD)
     RES$rec_pars = rec_pars
-    RES$rec_rho = f$env$parList(fit$par)$rec_rho
+    trans_rho = f$env$parList(fit$par)$trans_rho
+    RES$rec_rho = (exp(trans_rho)-1)/(exp(trans_rho)+1)
     RES$SDlogF = exp(f$env$parList(fit$par)$logSDlogF)
     RES$rho_SDlogF = f$env$parList(fit$par)$rho_SDlogF
     RES$SDlogC = exp(f$env$parList(fit$par)$logSDlogC)

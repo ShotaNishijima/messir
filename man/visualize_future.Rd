@@ -3,7 +3,20 @@
 \encoding{UTF-8}
 \name{visualize_future}
 \alias{visualize_future}
-\title{Function for plotting future_res}
+\title{#' Theme for ggplot
+#' @import ggplot2
+#' @encoding UTF-8
+#' @export
+theme_SH <- function(){
+  theme_bw(base_size=12) +
+    theme(panel.grid = element_blank(),
+          axis.text.x=element_text(size=11,color="black"),
+          axis.text.y=element_text(size=11,color="black"),
+          axis.line.x=element_line(size= 0.3528),
+          axis.line.y=element_line(size= 0.3528),
+          legend.position="none")
+}
+Function for plotting future_res}
 \usage{
 visualize_future(
   future_list,
@@ -20,5 +33,18 @@ visualize_future(
 \item{title}{figure title}
 }
 \description{
+#' Theme for ggplot
+#' @import ggplot2
+#' @encoding UTF-8
+#' @export
+theme_SH <- function(){
+  theme_bw(base_size=12) +
+    theme(panel.grid = element_blank(),
+          axis.text.x=element_text(size=11,color="black"),
+          axis.text.y=element_text(size=11,color="black"),
+          axis.line.x=element_line(size= 0.3528),
+          axis.line.y=element_line(size= 0.3528),
+          legend.position="none")
+}
 Function for plotting future_res
 }
