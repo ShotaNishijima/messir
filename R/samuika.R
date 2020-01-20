@@ -8,9 +8,14 @@
 #' @param index_data time-series of indices
 #' @param SR stock-recruit function ("BH", "RI", or "HS")
 #' @param regime_year years when a regime shift occurred
-#' @param regime_par parameters that changed by the regime shift
-#' @param regime_key KEY representing regime (e.g., c(0,1,0) indicates the first and the third regimes were identical)
-#' @param stock_shared_par parameter(s) that were shared between stocks
+#' @param regime_par parameters that changed by the regime shift (\code{c("a","b","sd")})
+#' @param regime_key KEY representing regime (e.g., \code{c(0,1,0)} indicates the first and the third regimes were identical)
+#' @param stock_shared_par parameter(s) that were shared between stocks (\code{c("a","b","sd","SDlogF","SDlogC")})
+#' @param fixed_par parameter(s) fixed at the initial value(s) (\code{c("a","b","sd","rec_rho","SDlogF","rho_SDlogF","SDlogC","q","SDlogCPUE")})
+#' @param add_cpue VECTOR of additional cpue time-series
+#' @param add_cpue_info column 1: CPUE_ID, 2: Stock_ID, 3: Year_ID
+#' @param add_cpue_tday VECTOR of days since the beginning of fishing season
+#' @param add_cpue_covariate array used as covariate(s) for additional CPUE
 #'
 #' @encoding UTF-8
 #' @export
@@ -30,6 +35,12 @@ samuika = function(
   logZ_sd = NULL,
   logZ_weight = NULL,
   restrict_mean = FALSE,
+  add_cpue = NULL, 
+  add_cpue_info = NULL,
+  add_cpue_tday = NULL,
+  fish_days = 180,
+  add_cpue_covariate = NULL,
+  add_cpue_SDkey = NULL, 
   M = 0.6,
   Pope = FALSE,
   scale_num_to_mass = 0.1,
@@ -176,15 +187,49 @@ samuika = function(
       }
     }
   }
-
   trans_rho_init = log((1-rec_rho_init)/(1+rec_rho_init))
+  
+  if (is.null(add_cpue)) {
+    use_add_cpue = 0
+    add_cpue2 = c(1)
+    add_cpue_info2 = matrix(0,ncol=3,nrow=1)
+    add_cpue_tday = c(1)
+    add_cpue_covariate = matrix(0,ncol=1,nrow=1)
+    add_cpue_SD_key = c(1)
+  } else {
+    use_add_cpue = 1
+    add_cpue2 = add_cpue
+    if (is.null(add_cpue_info)) stop("add_cpue_info is neccessary when add_cpue is used")
+    if (is.null(add_cpue_tday)) stop("add_cpue_tday is neccessary when add_cpue is used")
+    if (nrow(add_cpue_info) != length(add_cpue)) {
+      stop("nrow of add_cpue_info does not match length of add_cpue")
+    }
+    if (ncol(add_cpue_info) != 3) {
+      stop("ncol of add_cpue_info should be three (CPUE_ID, Stock_ID, Year_ID)!!!")
+    }
+    if (length(add_cpue_tday) != length(add_cpue)) {
+      stop("length of add_cpue_tday does not match length of add_cpue")
+    }
+    if (sum(!(add_cpue_info[,2] %in% Catch_key[,1])) != 0) {
+      stop("Stock_ID (column 2) is not correct")
+    }
+    add_cpue_info2 = data.frame(CPUE_ID = add_cpue_info[,1]-min(add_cpue_info[,1]),
+                                Stock_ID = add_cpue_info[,2],
+                                iy = add_cpue_info[,3]-start_year) %>% as.matrix()
+    if (is.null(add_cpue_covariate)) {
+      add_cpue_covariate = matrix(0,ncol=1,nrow=length(add_cpue2))
+    }
+    if (is.null(add_cpue_SDkey)) add_cpue_SD_key = 1:(max(add_cpue_info2[,1]+1))-1
+  }
 
   data_list = list(NYear=NYear,NStock=NStock,M=M_mat,Weight=weight_mat,
                    SDlogF_key=SDlogF_key,logF_diff=logF_diff,
                    SR=SR_tmb,reca_key=reca_key,recb_key=recb_key,recSD_key=recSD_key,
                    NCatch=NCatch,Catch=Catch,Pope=as.numeric(Pope),Catch_key=Catch_key,scale_num_to_mass=scale_num_to_mass,
                    NIndex=NIndex,Index=Index,Index_key=Index_key,
-                   logZ_mean=logZ_MEAN,logZ_sd=logZ_SD,logZ_w=logZ_W,restrict_mean=as.numeric(restrict_mean))
+                   logZ_mean=logZ_MEAN,logZ_sd=logZ_SD,logZ_w=logZ_W,restrict_mean=as.numeric(restrict_mean),
+                   use_add_cpue=use_add_cpue, fish_days=fish_days,add_cpue_info=add_cpue_info2,
+                   add_cpue=add_cpue2,add_cpue_tday=add_cpue_tday,add_cpue_covariate=add_cpue_covariate,add_cpue_SD_key = add_cpue_SD_key)
 
   param_init = list(
     logSDlogF = rep_len(log(SDlogF_init),max(SDlogF_key)+1),
@@ -198,10 +243,18 @@ samuika = function(
     logSDcpue = rep_len(log(SDcpue_init), max(Index_key[,4])+1),
     beta = rep(1,length(beta_fix)),
     logN = matrix(log(23.7),nrow=dim(weight_mat)[1],ncol=dim(weight_mat)[2]),
-    logF = matrix(log(0.38),nrow=dim(weight_mat)[1],ncol=dim(weight_mat)[2])
+    logF = matrix(log(0.38),nrow=dim(weight_mat)[1],ncol=dim(weight_mat)[2]),
+    logQ_add = rep(log(1/exp(1)),length(unique(add_cpue_info2[,1]))),
+    logSDcpue_add = rep(log(1),length(unique(add_cpue_SD_key))),
+    alpha = matrix(0,ncol=ncol(add_cpue_covariate),nrow=length(unique(add_cpue_info2[,1])))
   )
-
+  
   map = list()
+  if (use_add_cpue==0) {
+    map$logQ_add = rep(factor(NA),length(param_init$logQ_add))
+    map$logSDcpue_add = rep(factor(NA),length(param_init$logSDcpue_add))
+    map$alpha = rep(factor(NA),ncol(param_init$alpha)*nrow(param_init$alpha))
+  }
   if (!is.null(fixed_par)) {
     message("Parameter in 'fixed_par' is fixed at the initial value")
 

@@ -41,6 +41,15 @@ Type objective_function<Type>::operator() ()
   DATA_VECTOR(logZ_mean);
   DATA_VECTOR(logZ_sd);
   DATA_INTEGER(restrict_mean);
+  
+  // additional cpue data
+  DATA_INTEGER(use_add_cpue); // 0: Not use, 1: Use
+  DATA_SCALAR(fish_days); // duration of fishing days (usually 180)
+  DATA_IARRAY(add_cpue_info); // [column] 0: CPUE_ID, 1: Stock_ID, 2: Year_ID
+  DATA_VECTOR(add_cpue); // cpue data
+  DATA_VECTOR(add_cpue_tday); //day since the beginning of fishing season
+  DATA_ARRAY(add_cpue_covariate); // covariate data
+  DATA_IVECTOR(add_cpue_SD_key);
 
   // PARAMETERS //
   // Fishing process parameters
@@ -64,6 +73,11 @@ Type objective_function<Type>::operator() ()
   // Random effects
   PARAMETER_ARRAY(logN); //matrix of 2 rows x NYear colums
   PARAMETER_ARRAY(logF); //matrix of 2 rows x NYear colums
+  
+  // Parameters related to add_cpue
+  PARAMETER_VECTOR(logQ_add); //
+  PARAMETER_VECTOR(logSDcpue_add);
+  PARAMETER_ARRAY(alpha);
 
   array<Type> F(NStock,NYear);
   array<Type> N(NStock,NYear);
@@ -228,6 +242,29 @@ Type objective_function<Type>::operator() ()
       Index(i)=exp(rnorm(log(predIndex(i)),exp(logSDcpue(Index_key(i,3)))));
     }
   }
+  
+  // additional_cpue_data 
+  // vector<Type> Q_add = logQ_add;
+  vector<Type> SDcpue_add = exp(logSDcpue_add);
+  vector<Type> pred_log_cpue_add(add_cpue.size());
+  pred_log_cpue_add.fill(0.0);
+  vector<Type> resid_add(add_cpue.size());
+  resid_add.fill(0.0);
+  if (use_add_cpue > 0) {
+    for (int i=0;i<add_cpue.size();i++) {
+      pred_log_cpue_add(i) += logQ_add(add_cpue_info(i,0));
+      pred_log_cpue_add(i) += logN(add_cpue_info(i,1),add_cpue_info(i,2));
+      pred_log_cpue_add(i) -= (F(add_cpue_info(i,1),add_cpue_info(i,2))+M(add_cpue_info(i,1),add_cpue_info(i,2)))*add_cpue_tday(i)/fish_days;
+      for (int j=0;j<add_cpue_covariate.cols();j++) {
+        pred_log_cpue_add(i) += alpha(add_cpue_info(i,0),j)*add_cpue_covariate(i,j);
+      }
+      // resid_add(i) += log(add_cpue(i))-pred_log_cpue_add(i);
+      // nll -= dnorm(resid_add(i), Type(0.0), SDcpue_add(add_cpue_SD_key(add_cpue_info(i,0))), true);
+      resid_add(i) = CppAD::CondExpLt(log(add_cpue(i)),pred_log_cpue_add(i),pred_log_cpue_add(i)-log(add_cpue(i)),log(add_cpue(i))-pred_log_cpue_add(i));
+      nll -= log(Type(2.0)*SDcpue_add(add_cpue_SD_key(add_cpue_info(i,0))));
+      nll -= resid_add(i)/SDcpue_add(add_cpue_SD_key(add_cpue_info(i,0)));
+    }
+  }
 
   SIMULATE{
     REPORT(logF);
@@ -246,6 +283,7 @@ Type objective_function<Type>::operator() ()
   ADREPORT(predC);
   ADREPORT(N);
   ADREPORT(SSN);
+  ADREPORT(pred_log_cpue_add);
   // ADREPORT(rec_a);
   // ADREPORT(rec_b);
   // ADREPORT(rec_SD);
