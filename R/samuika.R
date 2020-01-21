@@ -35,12 +35,14 @@ samuika = function(
   logZ_sd = NULL,
   logZ_weight = NULL,
   restrict_mean = FALSE,
-  add_cpue = NULL, 
+  add_cpue = NULL,
   add_cpue_info = NULL,
   add_cpue_tday = NULL,
   fish_days = 180,
   add_cpue_covariate = NULL,
-  add_cpue_SDkey = NULL, 
+  add_cpue_SDkey = NULL,
+  add_cpue_error_type = 2,
+  add_cpue_all = TRUE,
   M = 0.6,
   Pope = FALSE,
   scale_num_to_mass = 0.1,
@@ -188,7 +190,7 @@ samuika = function(
     }
   }
   trans_rho_init = log((1-rec_rho_init)/(1+rec_rho_init))
-  
+
   if (is.null(add_cpue)) {
     use_add_cpue = 0
     add_cpue2 = c(1)
@@ -197,6 +199,9 @@ samuika = function(
     add_cpue_covariate = matrix(0,ncol=1,nrow=1)
     add_cpue_SD_key = c(1)
   } else {
+    if (!is.null(logZ_mean)) {
+      stop("Either logZ_mean or add_cpue should be selected!")
+    }
     use_add_cpue = 1
     add_cpue2 = add_cpue
     if (is.null(add_cpue_info)) stop("add_cpue_info is neccessary when add_cpue is used")
@@ -220,6 +225,18 @@ samuika = function(
       add_cpue_covariate = matrix(0,ncol=1,nrow=length(add_cpue2))
     }
     if (is.null(add_cpue_SDkey)) add_cpue_SD_key = 1:(max(add_cpue_info2[,1]+1))-1
+    if (add_cpue_all) {
+      use_add_cpue = 2
+      for (i in 1:nrow(logZ_W)) {
+        for (j in 1:ncol(logZ_W)) {
+          if ((i-1) %in% add_cpue_info2[,2]) {
+            if ((j-1) %in% add_cpue_info2[,3]) {
+              logZ_W[i,j] <- 1
+            }
+          }
+        }
+      }
+    }
   }
 
   data_list = list(NYear=NYear,NStock=NStock,M=M_mat,Weight=weight_mat,
@@ -229,7 +246,8 @@ samuika = function(
                    NIndex=NIndex,Index=Index,Index_key=Index_key,
                    logZ_mean=logZ_MEAN,logZ_sd=logZ_SD,logZ_w=logZ_W,restrict_mean=as.numeric(restrict_mean),
                    use_add_cpue=use_add_cpue, fish_days=fish_days,add_cpue_info=add_cpue_info2,
-                   add_cpue=add_cpue2,add_cpue_tday=add_cpue_tday,add_cpue_covariate=add_cpue_covariate,add_cpue_SD_key = add_cpue_SD_key)
+                   add_cpue=add_cpue2,add_cpue_tday=add_cpue_tday,add_cpue_covariate=add_cpue_covariate,
+                   add_cpue_SD_key = add_cpue_SD_key,cpue_add_error_type = add_cpue_error_type)
 
   param_init = list(
     logSDlogF = rep_len(log(SDlogF_init),max(SDlogF_key)+1),
@@ -246,10 +264,12 @@ samuika = function(
     logF = matrix(log(0.38),nrow=dim(weight_mat)[1],ncol=dim(weight_mat)[2]),
     logQ_add = rep(log(1/exp(1)),length(unique(add_cpue_info2[,1]))),
     logSDcpue_add = rep(log(1),length(unique(add_cpue_SD_key))),
+    # logSDcpue_add = rep(log(0.001),length(unique(add_cpue_SD_key))),
     alpha = matrix(0,ncol=ncol(add_cpue_covariate),nrow=length(unique(add_cpue_info2[,1])))
   )
-  
+
   map = list()
+  # map$logSDcpue_add = rep(factor(NA), length(param_init$logSDcpue_add))
   if (use_add_cpue==0) {
     map$logQ_add = rep(factor(NA),length(param_init$logQ_add))
     map$logSDcpue_add = rep(factor(NA),length(param_init$logSDcpue_add))

@@ -41,7 +41,7 @@ Type objective_function<Type>::operator() ()
   DATA_VECTOR(logZ_mean);
   DATA_VECTOR(logZ_sd);
   DATA_INTEGER(restrict_mean);
-  
+
   // additional cpue data
   DATA_INTEGER(use_add_cpue); // 0: Not use, 1: Use
   DATA_SCALAR(fish_days); // duration of fishing days (usually 180)
@@ -50,6 +50,7 @@ Type objective_function<Type>::operator() ()
   DATA_VECTOR(add_cpue_tday); //day since the beginning of fishing season
   DATA_ARRAY(add_cpue_covariate); // covariate data
   DATA_IVECTOR(add_cpue_SD_key);
+  DATA_INTEGER(cpue_add_error_type); //0: (log)normal, 1: (log)laplace, 2: gamma
 
   // PARAMETERS //
   // Fishing process parameters
@@ -73,7 +74,7 @@ Type objective_function<Type>::operator() ()
   // Random effects
   PARAMETER_ARRAY(logN); //matrix of 2 rows x NYear colums
   PARAMETER_ARRAY(logF); //matrix of 2 rows x NYear colums
-  
+
   // Parameters related to add_cpue
   PARAMETER_VECTOR(logQ_add); //
   PARAMETER_VECTOR(logSDcpue_add);
@@ -152,23 +153,25 @@ Type objective_function<Type>::operator() ()
   vector<Type> sum_logZ_w(NStock);
   sum_logZ.fill(0.0);
   sum_logZ_w.fill(0.0);
-  for(int i=0;i<NStock;i++){
-    for(int j=0;j<NYear;j++){
-      // sum_logZ(i) += logZ_w(i,j)*log(F(i,j)+M(i,j));
-      // sum_logZ(i) += logZ_w(i,j)*(F(i,j)+M(i,j));
-      sum_logZ(i) += logZ_w(i,j)*(F(i,j));
-      sum_logZ_w(i) += logZ_w(i,j);
-      if(restrict_mean==0){
-        if(logZ_w(i,j)>Type(0.0)){
-          // nll-=dnorm(log(F(i,j)+M(i,j)),logZ_mean(i),logZ_sd(i),true);
-          nll-=dnorm(log(F(i,j)),logZ_mean(i),logZ_sd(i),true);
+  if (use_add_cpue==0) {
+    for(int i=0;i<NStock;i++){
+      for(int j=0;j<NYear;j++){
+        // sum_logZ(i) += logZ_w(i,j)*log(F(i,j)+M(i,j));
+        // sum_logZ(i) += logZ_w(i,j)*(F(i,j)+M(i,j));
+        sum_logZ(i) += logZ_w(i,j)*(F(i,j));
+        sum_logZ_w(i) += logZ_w(i,j);
+        if(restrict_mean==0){
+          if(logZ_w(i,j)>Type(0.0)){
+            // nll-=dnorm(log(F(i,j)+M(i,j)),logZ_mean(i),logZ_sd(i),true);
+            nll-=dnorm(log(F(i,j)),logZ_mean(i),logZ_sd(i),true);
+          }
         }
       }
-    }
-    if(restrict_mean==1){
-      if(sum_logZ_w(i)>Type(0.0)){
-        // nll-=dnorm(sum_logZ(i)/sum_logZ_w(i),logZ_mean(i),logZ_sd(i),true);
-        nll-=dnorm(log(sum_logZ(i)/sum_logZ_w(i)),logZ_mean(i),logZ_sd(i),true);
+      if(restrict_mean==1){
+        if(sum_logZ_w(i)>Type(0.0)){
+          // nll-=dnorm(sum_logZ(i)/sum_logZ_w(i),logZ_mean(i),logZ_sd(i),true);
+          nll-=dnorm(log(sum_logZ(i)/sum_logZ_w(i)),logZ_mean(i),logZ_sd(i),true);
+        }
       }
     }
   }
@@ -242,15 +245,17 @@ Type objective_function<Type>::operator() ()
       Index(i)=exp(rnorm(log(predIndex(i)),exp(logSDcpue(Index_key(i,3)))));
     }
   }
-  
-  // additional_cpue_data 
+
+  // additional_cpue_data
   // vector<Type> Q_add = logQ_add;
   vector<Type> SDcpue_add = exp(logSDcpue_add);
   vector<Type> pred_log_cpue_add(add_cpue.size());
   pred_log_cpue_add.fill(0.0);
   vector<Type> resid_add(add_cpue.size());
   resid_add.fill(0.0);
-  if (use_add_cpue > 0) {
+  vector<Type> shape(add_cpue.size());
+  shape.fill(0.0);
+  if (use_add_cpue == 1) {
     for (int i=0;i<add_cpue.size();i++) {
       pred_log_cpue_add(i) += logQ_add(add_cpue_info(i,0));
       pred_log_cpue_add(i) += logN(add_cpue_info(i,1),add_cpue_info(i,2));
@@ -258,13 +263,51 @@ Type objective_function<Type>::operator() ()
       for (int j=0;j<add_cpue_covariate.cols();j++) {
         pred_log_cpue_add(i) += alpha(add_cpue_info(i,0),j)*add_cpue_covariate(i,j);
       }
-      // resid_add(i) += log(add_cpue(i))-pred_log_cpue_add(i);
-      // nll -= dnorm(resid_add(i), Type(0.0), SDcpue_add(add_cpue_SD_key(add_cpue_info(i,0))), true);
-      resid_add(i) = CppAD::CondExpLt(log(add_cpue(i)),pred_log_cpue_add(i),pred_log_cpue_add(i)-log(add_cpue(i)),log(add_cpue(i))-pred_log_cpue_add(i));
-      nll -= log(Type(2.0)*SDcpue_add(add_cpue_SD_key(add_cpue_info(i,0))));
-      nll -= resid_add(i)/SDcpue_add(add_cpue_SD_key(add_cpue_info(i,0)));
+      if (cpue_add_error_type == 0) { //(log)normal
+        resid_add(i) += log(add_cpue(i))-pred_log_cpue_add(i);
+        nll -= dnorm(resid_add(i), Type(0.0), SDcpue_add(add_cpue_SD_key(add_cpue_info(i,0))), true);
+      } else {
+        if (cpue_add_error_type == 1) { //(log)laplace
+          resid_add(i) = CppAD::CondExpLe(log(add_cpue(i)),pred_log_cpue_add(i),pred_log_cpue_add(i)-log(add_cpue(i)),log(add_cpue(i))-pred_log_cpue_add(i));
+          nll -= -log(Type(2.0))+dexp(resid_add(i),Type(1.0)/SDcpue_add(add_cpue_SD_key(add_cpue_info(i,0))),true);
+        } else { // gamma
+          shape(i) += exp(pred_log_cpue_add(i))/SDcpue_add(add_cpue_SD_key(add_cpue_info(i,0)));
+          nll -= dgamma(add_cpue(i), shape(i), SDcpue_add(add_cpue_SD_key(add_cpue_info(i,0))), true);
+        }
+      }
     }
   }
+
+  if (use_add_cpue == 2) {
+    for(int i=0;i<NStock;i++){
+      for(int j=0;j<NYear;j++){
+        // sum_logZ(i) += logZ_w(i,j)*(F(i,j)+M(i,j));
+        sum_logZ(i) += logZ_w(i,j)*log(F(i,j)+M(i,j));
+        sum_logZ_w(i) += logZ_w(i,j);
+      }
+    }
+    for (int i=0;i<add_cpue.size();i++) {
+      pred_log_cpue_add(i) += logQ_add(add_cpue_info(i,0)); // intercept
+      // pred_log_cpue_add(i) -= (sum_logZ(add_cpue_info(i,0))/sum_logZ_w(add_cpue_info(i,0)))*add_cpue_tday(i)/fish_days;
+      pred_log_cpue_add(i) -= exp(sum_logZ(add_cpue_info(i,0))/sum_logZ_w(add_cpue_info(i,0)))*add_cpue_tday(i)/fish_days;
+      for (int j=0;j<add_cpue_covariate.cols();j++) {
+        pred_log_cpue_add(i) += alpha(add_cpue_info(i,0),j)*add_cpue_covariate(i,j);
+      }
+      if (cpue_add_error_type == 0) { //(log)normal
+        resid_add(i) += log(add_cpue(i))-pred_log_cpue_add(i);
+        nll -= dnorm(resid_add(i), Type(0.0), SDcpue_add(add_cpue_SD_key(add_cpue_info(i,0))), true);
+      } else {
+        if (cpue_add_error_type == 1) { //(log) laplace
+          resid_add(i) = CppAD::CondExpLe(log(add_cpue(i)),pred_log_cpue_add(i),pred_log_cpue_add(i)-log(add_cpue(i)),log(add_cpue(i))-pred_log_cpue_add(i));
+          nll -= -log(Type(2.0))+dexp(resid_add(i),Type(1.0)/SDcpue_add(add_cpue_SD_key(add_cpue_info(i,0))),true);
+        } else { // gamma
+          shape(i) += exp(pred_log_cpue_add(i))/SDcpue_add(add_cpue_SD_key(add_cpue_info(i,0)));
+          nll -= dgamma(add_cpue(i), shape(i), SDcpue_add(add_cpue_SD_key(add_cpue_info(i,0))), true);
+        }
+      }
+    }
+  }
+
 
   SIMULATE{
     REPORT(logF);
@@ -283,7 +326,7 @@ Type objective_function<Type>::operator() ()
   ADREPORT(predC);
   ADREPORT(N);
   ADREPORT(SSN);
-  ADREPORT(pred_log_cpue_add);
+  // ADREPORT(pred_log_cpue_add);
   // ADREPORT(rec_a);
   // ADREPORT(rec_b);
   // ADREPORT(rec_SD);
