@@ -16,6 +16,17 @@
 #' @param add_cpue_info column 1: CPUE_ID, 2: Stock_ID, 3: Year_ID
 #' @param add_cpue_tday VECTOR of days since the beginning of fishing season
 #' @param add_cpue_covariate array used as covariate(s) for additional CPUE
+#' @param add_cpue_error_type error distribution for fitting additional CPUE; 0: lonormal, 1:log-Laplace, 2: gamma, 3: normal, 4: Laplace
+#' @param add_cpue_all fitting additional CPUE not separately per-year (0: FALSE, 1 (default): using mean(F+Z), 2: using mean(log(F+Z))
+#' @param logZ_mean prior mean of logF (NOTICE: Not logZ!!)
+#' @param logZ_sd prior SD of logF (NOTICE: Not logZ!!)
+#' @param logZ_weight matrix for which years are included when using prior of \code{logZ_mean} and \code{logZ_sd} or \code{add_cpue}
+#' @param fish_days duration of fishing season when using \code{add_cpue} (default: 180)
+#' @param M natural mortality coefficient (default: 0.6)
+#' @param Pope whether the Pope approximation is used (TRUE) or not (FALSE: default)
+#' @param scale_num_to_mass scaling multiplier in conversion of number to mass
+#' @param bias_correct bias correct option in \code{sdreport}
+#' @param fixed_par which parameters among \code{c("a","b","sd","rec_rho","SDlogF","rho_SDlogF","SDlogC","q","SDlogCPUE")} are fixed at their initial values
 #'
 #' @encoding UTF-8
 #' @export
