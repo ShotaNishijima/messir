@@ -41,8 +41,8 @@ samuika = function(
   fish_days = 180,
   add_cpue_covariate = NULL,
   add_cpue_SDkey = NULL,
-  add_cpue_error_type = 2,
-  add_cpue_all = FALSE,
+  add_cpue_error_type = 0,
+  add_cpue_all = 1, # 0: FALSE, 1:
   M = 0.6,
   Pope = FALSE,
   scale_num_to_mass = 0.1,
@@ -162,7 +162,11 @@ samuika = function(
       message("'logZ_sd' is not usable when 'logZ_mean' is null")
     }
     if (!is.null(logZ_weight)) {
-      message("'logZ_weight' is not usable when 'logZ_mean' is null")
+      if (!is.null(add_cpue)) {
+        message("'logZ_weight' is used for add_cpue")
+      } else {
+        message("'logZ_weight' is not usable when 'logZ_mean' is null")
+      }
     }
     logZ_MEAN = rep(0,NStock)
     logZ_SD = rep(1,NStock)
@@ -225,13 +229,15 @@ samuika = function(
       add_cpue_covariate = matrix(0,ncol=1,nrow=length(add_cpue2))
     }
     if (is.null(add_cpue_SDkey)) add_cpue_SD_key = 1:(max(add_cpue_info2[,1]+1))-1
-    if (add_cpue_all) {
-      use_add_cpue = 2
-      for (i in 1:nrow(logZ_W)) {
-        for (j in 1:ncol(logZ_W)) {
-          if ((i-1) %in% add_cpue_info2[,2]) {
-            if ((j-1) %in% add_cpue_info2[,3]) {
-              logZ_W[i,j] <- 1
+    if (add_cpue_all>0) {
+      use_add_cpue = add_cpue_all + 1
+      if (!is.null(logZ_weight)) {
+        logZ_W = logZ_weight %>% select(-Year) %>% as.matrix() %>% t()
+      } else {
+        for (i in 1:nrow(logZ_W)) {
+          for (j in 1:ncol(logZ_W)) {
+            if ((i-1) %in% add_cpue_info2[,2]) {
+              if ((j-1) %in% add_cpue_info2[,3]) logZ_W[i,j] <- 1
             }
           }
         }
@@ -262,7 +268,7 @@ samuika = function(
     beta = rep(1,length(beta_fix)),
     logN = matrix(log(23.7),nrow=dim(weight_mat)[1],ncol=dim(weight_mat)[2]),
     logF = matrix(log(0.38),nrow=dim(weight_mat)[1],ncol=dim(weight_mat)[2]),
-    logQ_add = rep(log(1/exp(1)),length(unique(add_cpue_info2[,1]))),
+    logQ_add = rep(log(1),length(unique(add_cpue_info2[,1]))),
     logSDcpue_add = rep(log(1),length(unique(add_cpue_SD_key))),
     # logSDcpue_add = rep(log(0.001),length(unique(add_cpue_SD_key))),
     alpha = matrix(0,ncol=ncol(add_cpue_covariate),nrow=length(unique(add_cpue_info2[,1])))
@@ -369,19 +375,41 @@ samuika = function(
     RES$cor = stats::cov2cor(rep$cov.fixed)
 
     if (bias_correct) {
-      N_est = matrix(rep$unbiased$value[names(rep$unbiased$value)=="N"],nrow=NStock)
-      SSN_est = matrix(rep$unbiased$value[names(rep$unbiased$value)=="SSN"],nrow=NStock)
-      F_est = matrix(rep$unbiased$value[names(rep$unbiased$value)=="F"],nrow=NStock)
-      predC_est = matrix(rep$unbiased$value[names(rep$unbiased$value)=="predC"],nrow=NStock)
+      VALUE = rep$unbiased$value
+    } else {
+      VALUE = rep$value
+    }
+
+    if (!is.null(add_cpue)) {
+      RES$alpha = f$env$parList(fit$par)$alpha
+      RES$q_add = exp(f$env$parList(fit$par)$logQ_add)
+      RES$SDcpue_add = exp(f$env$parList(fit$par)$logSDcpue_add)
+      RES$pred_cpue_add = as.numeric(exp(VALUE[names(VALUE)=="pred_log_cpue_add"]))
+      RES$resid_cpue_add = as.numeric(VALUE[names(VALUE)=="resid_add"])
+      add_cpue_table = add_cpue_info
+      if (!is.null(add_cpue_covariate)) {
+        add_cpue_table = bind_cols(add_cpue_table, tibble(covariate=add_cpue_covariate))
+      }
+      add_cpue_table = add_cpue_table %>%
+        mutate(pred_cpue = RES$pred_cpue_add,resid = RES$resid_cpue_add)
+      RES$add_cpue_table = add_cpue_table
+      if (add_cpue_all > 0) {
+        RES$meanZ = as.numeric(VALUE[names(VALUE)=="sum_logZ"]/VALUE[names(VALUE)=="sum_logZ_w"])
+        if (add_cpue_all == 2) RES$meanZ = exp(RES$meanZ)
+      }
+    }
+
+    N_est = matrix(VALUE[names(VALUE)=="N"],nrow=NStock)
+    SSN_est = matrix(VALUE[names(VALUE)=="SSN"],nrow=NStock)
+    F_est = matrix(VALUE[names(VALUE)=="F"],nrow=NStock)
+    predC_est = matrix(VALUE[names(VALUE)=="predC"],nrow=NStock)
+
+    if (bias_correct) {
       N_se = matrix(rep_summary[rownames(rep_summary)=="N",4],nrow=NStock)
       SSN_se = matrix(rep_summary[rownames(rep_summary)=="SSN",4],nrow=NStock)
       F_se = matrix(rep_summary[rownames(rep_summary)=="F",4],nrow=NStock)
       predC_se = matrix(rep_summary[rownames(rep_summary)=="predC",4],nrow=NStock)
     } else {
-      N_est = matrix(rep$value[names(rep$value)=="N"],nrow=NStock)
-      SSN_est = matrix(rep$value[names(rep$value)=="SSN"],nrow=NStock)
-      F_est = matrix(rep$value[names(rep$value)=="F"],nrow=NStock)
-      predC_est = matrix(rep$value[names(rep$value)=="predC"],nrow=NStock)
       N_se = matrix(rep_summary[rownames(rep_summary)=="N",2],nrow=NStock)
       SSN_se = matrix(rep_summary[rownames(rep_summary)=="SSN",2],nrow=NStock)
       F_se = matrix(rep_summary[rownames(rep_summary)=="F",2],nrow=NStock)

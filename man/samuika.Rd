@@ -21,6 +21,14 @@ samuika(
   logZ_sd = NULL,
   logZ_weight = NULL,
   restrict_mean = FALSE,
+  add_cpue = NULL,
+  add_cpue_info = NULL,
+  add_cpue_tday = NULL,
+  fish_days = 180,
+  add_cpue_covariate = NULL,
+  add_cpue_SDkey = NULL,
+  add_cpue_error_type = 0,
+  add_cpue_all = 1,
   M = 0.6,
   Pope = FALSE,
   scale_num_to_mass = 0.1,
@@ -57,11 +65,21 @@ samuika(
 
 \item{regime_year}{years when a regime shift occurred}
 
-\item{regime_par}{parameters that changed by the regime shift}
+\item{regime_par}{parameters that changed by the regime shift (\code{c("a","b","sd")})}
 
-\item{regime_key}{KEY representing regime (e.g., c(0,1,0) indicates the first and the third regimes were identical)}
+\item{regime_key}{KEY representing regime (e.g., \code{c(0,1,0)} indicates the first and the third regimes were identical)}
 
-\item{stock_shared_par}{parameter(s) that were shared between stocks}
+\item{stock_shared_par}{parameter(s) that were shared between stocks (\code{c("a","b","sd","SDlogF","SDlogC")})}
+
+\item{add_cpue}{VECTOR of additional cpue time-series}
+
+\item{add_cpue_info}{column 1: CPUE_ID, 2: Stock_ID, 3: Year_ID}
+
+\item{add_cpue_tday}{VECTOR of days since the beginning of fishing season}
+
+\item{add_cpue_covariate}{array used as covariate(s) for additional CPUE}
+
+\item{fixed_par}{parameter(s) fixed at the initial value(s) (\code{c("a","b","sd","rec_rho","SDlogF","rho_SDlogF","SDlogC","q","SDlogCPUE")})}
 }
 \description{
 State-Space Assessment model Used for surume-IKA (samuika) ----
