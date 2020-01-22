@@ -552,10 +552,15 @@ retro_samuika = function(samuika_res, n=5) {
     # max_index_year = max(input_tmp$catch_data$Year) #catch dataに合わせる
     max_index_year = max(input_tmp$index_data$Year)
 
-    catch_data2 = filter(input_tmp$catch_data,Year<max_catch_year)
-    index_data2 = filter(input_tmp$index_data,Year<max_index_year)
+    catch_data2 = dplyr::filter(input_tmp$catch_data,Year<max_catch_year)
+    index_data2 = dplyr::filter(input_tmp$index_data,Year<max_index_year)
     input_tmp$catch_data = catch_data2
     input_tmp$index_data = index_data2
+
+    if (!is.null(input_tmp$logZ_weight)) {
+      logZ_weight2 = dplyr::filter(input_tmp$logZ_weight, Year < max(Year))
+      input_tmp$logZ_weight = logZ_weight
+    }
 
     res.c = do.call(samuika, input_tmp)
     RES$retro[[i]] = res.c
