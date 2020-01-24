@@ -12,9 +12,10 @@ Type objective_function<Type>::operator() ()
 
   // Fishing process data
   DATA_ARRAY(M); //Natural morality coefficient (2 x NYear matrix)
-  DATA_ARRAY(Weight); //2 x NYear matrix
+  DATA_ARRAY(Weight); //NStock x NYear matrix
   DATA_IVECTOR(SDlogF_key); //c(0,1) or c(0,0)
   DATA_INTEGER(logF_diff); // 0: 0 difference, 1:difference
+  DATA_IVECTOR(F_incl_w); //NYear vector
 
   // Recruitment process data
   DATA_INTEGER(SR); //0:HS, 1:BH, 2:RI
@@ -133,10 +134,12 @@ Type objective_function<Type>::operator() ()
 
   if(logF_diff==0){
     for(int i=1;i<NYear;i++){
-      nll+=neg_log_densityF(logF.col(i)-logF.col(i-1));
-      SIMULATE {
-        logF.col(i)=logF.col(i-1)+neg_log_densityF.simulate();
-        F.col(i)=exp(logF.col(i));
+      if (F_incl_w(i)>0) {
+        nll+=neg_log_densityF(logF.col(i)-logF.col(i-1));
+        SIMULATE {
+          logF.col(i)=logF.col(i-1)+neg_log_densityF.simulate();
+          F.col(i)=exp(logF.col(i));
+        }
       }
     } // F process likelihood
   }else{
@@ -180,6 +183,10 @@ Type objective_function<Type>::operator() ()
   vector<Type> rec_a=exp(rec_loga);
   vector<Type> rec_b=exp(rec_logb);
   vector<Type> rec_SD=exp(rec_logSD);
+  array<Type> rec_resid(NStock,NYear);
+  rec_resid.fill(0.0);
+  array<Type> pred_N(NStock,NYear);
+  pred_N(0.0);
 
   for(int j=1;j<NYear;j++){
     vector<Type> pred_logN(NStock); // logN predicted from stock-recruitment relationship
@@ -222,6 +229,8 @@ Type objective_function<Type>::operator() ()
     using namespace density;  // using multivariate normal distribution
     MVNORM_t<Type> neg_log_densityR(rec_var);  // with the var-cov matirix "rec_var" for MVN
     nll+=neg_log_densityR(logN.col(j)-pred_logN); // Recruit process likelihood
+    pred_N.col(j)+=exp(pred_logN);
+    rec_resid.col(j)+=logN.col(j)-pred_logN;
     SIMULATE{
       logN.col(j)=pred_logN+neg_log_densityR.simulate();
       N.col(j)=exp(logN.col(j));
@@ -325,8 +334,8 @@ Type objective_function<Type>::operator() ()
     REPORT(Index);
     REPORT(F);
     REPORT(N);
-    REPORT(predC);
-    REPORT(SSN);
+    // REPORT(predC);
+    // REPORT(SSN);
   }
 
   ADREPORT(logF);
@@ -343,6 +352,8 @@ Type objective_function<Type>::operator() ()
   ADREPORT(SDcpue_add);
   ADREPORT(sum_logZ);
   ADREPORT(sum_logZ_w);
+  ADREPORT(pred_N);
+  // ADREPORT(rec_resid);
   // ADREPORT(shape);
 
   return nll;

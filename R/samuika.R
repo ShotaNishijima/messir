@@ -27,6 +27,7 @@
 #' @param scale_num_to_mass scaling multiplier in conversion of number to mass
 #' @param bias_correct bias correct option in \code{sdreport}
 #' @param fixed_par which parameters among \code{c("a","b","sd","rec_rho","SDlogF","rho_SDlogF","SDlogC","q","SDlogCPUE")} are fixed at their initial values
+#' @param map_add added factor to map other than fixed_per
 #'
 #' @encoding UTF-8
 #' @export
@@ -53,13 +54,15 @@ samuika = function(
   add_cpue_covariate = NULL,
   add_cpue_SDkey = NULL,
   add_cpue_error_type = 0,
-  add_cpue_all = 1, # 0: FALSE, 1:
+  add_cpue_all = 1, # 0: FALSE, 1: modeling E(F+M), 2: modeling log(F+M)
+  Fprocess_remove_year = NULL,
   M = 0.6,
   Pope = FALSE,
   scale_num_to_mass = 0.1,
   bias_correct = TRUE,
   bias_correct_control = list(sd=bias_correct),
   fixed_par = c("a","b","sd","rec_rho","SDlogF","rho_SDlogF","SDlogC","q","SDlogCPUE")[6],
+  map_add = NULL,
   logF_diff = 0, #
   SDlogF_init = 0.2,
   rho_SDlogF_init = 0.0,
@@ -255,9 +258,13 @@ samuika = function(
       }
     }
   }
+  F_incl_w = rep(1,nrow(weight_data))
+  if (!is.null(Fprocess_remove_year)) {
+    F_incl_w[weight_data$Year %in% Fprocess_remove_year] <- 0
+  }
 
   data_list = list(NYear=NYear,NStock=NStock,M=M_mat,Weight=weight_mat,
-                   SDlogF_key=SDlogF_key,logF_diff=logF_diff,
+                   SDlogF_key=SDlogF_key,logF_diff=logF_diff,F_incl_w = F_incl_w,
                    SR=SR_tmb,reca_key=reca_key,recb_key=recb_key,recSD_key=recSD_key,
                    NCatch=NCatch,Catch=Catch,Pope=as.numeric(Pope),Catch_key=Catch_key,scale_num_to_mass=scale_num_to_mass,
                    NIndex=NIndex,Index=Index,Index_key=Index_key,
@@ -343,6 +350,13 @@ samuika = function(
     map$beta = factor(map$beta)
     } else {
     map$beta = rep(factor(NA),length(beta_fix))
+    }
+
+  if (!is.null(map_add)) {
+    tmp = make_named_list(map_add)
+    for(i in 1:length(tmp$map_add)) {
+      map[[names(tmp$map_add)[i]]] <- map_add[[i]]
+    }
   }
 
   f = TMB::MakeADFun(data=data_list, parameters = param_init, random = c("logN","logF"), DLL="samuika",
@@ -353,6 +367,9 @@ samuika = function(
 
   RES = list()
   RES$input = arglist
+  RES$data_list = data_list
+  RES$param_init = param_init
+  RES$map = map
   RES$obj = f
   RES$opt = fit
   RES$par_list = f$env$parList(fit$par)
@@ -414,18 +431,18 @@ samuika = function(
     SSN_est = matrix(VALUE[names(VALUE)=="SSN"],nrow=NStock)
     F_est = matrix(VALUE[names(VALUE)=="F"],nrow=NStock)
     predC_est = matrix(VALUE[names(VALUE)=="predC"],nrow=NStock)
+    predN_est = matrix(VALUE[names(VALUE)=="pred_N"],nrow=NStock)
+    predN_est[predN_est==0] <- NA
+    # rec_resid = matrix(VALUE[names(VALUE)=="rec_resid"],nrow=NStock)
+    # rec_resid[rec_resid==0] <- NA
 
-    if (bias_correct) {
-      N_se = matrix(rep_summary[rownames(rep_summary)=="N",4],nrow=NStock)
-      SSN_se = matrix(rep_summary[rownames(rep_summary)=="SSN",4],nrow=NStock)
-      F_se = matrix(rep_summary[rownames(rep_summary)=="F",4],nrow=NStock)
-      predC_se = matrix(rep_summary[rownames(rep_summary)=="predC",4],nrow=NStock)
-    } else {
-      N_se = matrix(rep_summary[rownames(rep_summary)=="N",2],nrow=NStock)
-      SSN_se = matrix(rep_summary[rownames(rep_summary)=="SSN",2],nrow=NStock)
-      F_se = matrix(rep_summary[rownames(rep_summary)=="F",2],nrow=NStock)
-      predC_se = matrix(rep_summary[rownames(rep_summary)=="predC",2],nrow=NStock)
-    }
+    Ncol = ifelse(bias_correct,4,2)
+    N_se = matrix(rep_summary[rownames(rep_summary)=="N",Ncol],nrow=NStock)
+    SSN_se = matrix(rep_summary[rownames(rep_summary)=="SSN",Ncol],nrow=NStock)
+    F_se = matrix(rep_summary[rownames(rep_summary)=="F",Ncol],nrow=NStock)
+    predC_se = matrix(rep_summary[rownames(rep_summary)=="predC",Ncol],nrow=NStock)
+    predN_se = matrix(rep_summary[rownames(rep_summary)=="pred_N",Ncol],nrow=NStock)
+
     B_est = N_est*weight_mat*scale_num_to_mass
     SSB_est = SSN_est*weight_mat*scale_num_to_mass
     B_se = N_se*weight_mat*scale_num_to_mass
@@ -433,10 +450,12 @@ samuika = function(
 
     colnames(N_est) <- colnames(SSN_est) <- colnames(F_est) <- colnames(predC_est) <-
       colnames(N_se) <- colnames(SSN_se) <- colnames(F_se) <- colnames(predC_se) <-
-      colnames(B_est) <- colnames(SSB_est) <- colnames(B_se) <- colnames(SSB_se) <- 1:NYear+start_year-1
+      colnames(B_est) <- colnames(SSB_est) <- colnames(B_se) <- colnames(SSB_se) <-
+      colnames(predN_est) <- colnames(predN_se) <- 1:NYear+start_year-1
     rownames(N_est) <- rownames(SSN_est) <- rownames(F_est) <- rownames(predC_est) <-
       rownames(N_se) <- rownames(SSN_se) <- rownames(F_se) <- rownames(predC_se) <-
-      rownames(B_est) <- rownames(SSB_est) <- rownames(B_se) <- rownames(SSB_se) <- 1:NStock-1
+      rownames(B_est) <- rownames(SSB_est) <- rownames(B_se) <- rownames(SSB_se) <-
+      rownames(predN_est) <- rownames(predN_se) <- 1:NStock-1
 
     RES$N_est = N_est
     RES$SSN_est = SSN_est
@@ -444,6 +463,7 @@ samuika = function(
     RES$C_est = predC_est
     RES$B_est = B_est
     RES$SSB_est = SSB_est
+    RES$predN_est = predN_est
 
     RES$N_se = N_se
     RES$SSN_se = SSN_se
@@ -451,6 +471,7 @@ samuika = function(
     RES$C_se = predC_se
     RES$B_se = B_se
     RES$SSB_se = SSB_se
+    RES$predN_se = predN_se
 
     reca_est <- recb_est <- recSD_est <-
       SDlogF_est <- SDlogC_est <- matrix(0, nrow=NStock, ncol=NYear)
@@ -506,6 +527,11 @@ samuika = function(
       rename(rec_sd = value)
     Summary_PopDyn = join_gather(Summary_PopDyn, SDlogF_est) %>%
       rename(SDlogF = value)
+    Summary_PopDyn = join_gather(Summary_PopDyn, predN_est) %>%
+      rename(Stock_number_pred = value)
+    Summary_PopDyn = Summary_PopDyn %>%
+      mutate(rec_resid = log(Stock_number/Stock_number_pred)) %>%
+      arrange(Stock_ID, Year)
     Summary_PopDyn = join_gather(Summary_PopDyn, SDlogC_est) %>%
       rename(SDlogC = value)
     Summary_PopDyn = Summary_PopDyn %>%
@@ -513,7 +539,6 @@ samuika = function(
       arrange(Stock_ID, Year)
 
     RES$Summary_PopDyn = Summary_PopDyn
-
     Summary_index = full_join(index_data %>% as_tibble(),
                               select(mutate(Index_key %>% as_tibble(), Year = iy+start_year),-iy),
                               by = c("Stock_ID","Year")) %>%
@@ -538,7 +563,7 @@ samuika = function(
 #' @param n number of maximum removed years
 #' @encoding UTF-8
 #' @export
-retro_samuika = function(samuika_res, n=5) {
+retro_samuika = function(samuika_res, n=5, first_remove_catch_year = NULL, first_remove_index_year = NULL) {
   RES=list()
   RES$full <- res.c <- samuika_res
 
@@ -548,9 +573,16 @@ retro_samuika = function(samuika_res, n=5) {
   for(i in 1:n) {
     input_tmp = res.c$input
     input_tmp$bias_correct_control = list(sd=FALSE)
-    max_catch_year = max(input_tmp$catch_data$Year)
-    # max_index_year = max(input_tmp$catch_data$Year) #catch dataに合わせる
-    max_index_year = max(input_tmp$index_data$Year)
+    if (is.null(first_remove_catch_year)) {
+      max_catch_year = max(input_tmp$catch_data$Year)
+    } else {
+      max_catch_year = first_remove_catch_year-(i-1)
+    }
+    if (is.null(first_remove_index_year)) {
+      max_index_year = max(input_tmp$index_data$Year)
+    } else {
+      max_index_year = first_remove_index_year-(i-1)
+    }
 
     catch_data2 = dplyr::filter(input_tmp$catch_data,Year<max_catch_year)
     index_data2 = dplyr::filter(input_tmp$index_data,Year<max_index_year)

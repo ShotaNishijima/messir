@@ -18,7 +18,7 @@
 #' @export
 
 use_saumika_tmb <- function(TmbFile = "samuika",
-                         CppDir = system.file("inst/executable",package="messir"),
+                         CppDir = system.file("executable",package="messir"),
                          RunDir = getwd(),
                          overwrite = FALSE) {
   if (!requireNamespace("TMB", quietly = TRUE)) {

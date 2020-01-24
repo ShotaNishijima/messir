@@ -5,7 +5,12 @@
 \alias{retro_samuika}
 \title{Retrospective analysis for samuika}
 \usage{
-retro_samuika(samuika_res, n = 5)
+retro_samuika(
+  samuika_res,
+  n = 5,
+  first_remove_catch_year = NULL,
+  first_remove_index_year = NULL
+)
 }
 \arguments{
 \item{samuika_res}{samuika object}
