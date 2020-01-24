@@ -7,7 +7,7 @@
 \usage{
 use_saumika_tmb(
   TmbFile = "samuika",
-  CppDir = system.file("inst/executable", package = "messir"),
+  CppDir = system.file("executable", package = "messir"),
   RunDir = getwd(),
   overwrite = FALSE
 )

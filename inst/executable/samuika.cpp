@@ -12,9 +12,10 @@ Type objective_function<Type>::operator() ()
 
   // Fishing process data
   DATA_ARRAY(M); //Natural morality coefficient (2 x NYear matrix)
-  DATA_ARRAY(Weight); //2 x NYear matrix
+  DATA_ARRAY(Weight); //NStock x NYear matrix
   DATA_IVECTOR(SDlogF_key); //c(0,1) or c(0,0)
   DATA_INTEGER(logF_diff); // 0: 0 difference, 1:difference
+  DATA_IVECTOR(F_incl_w); //NYear vector
 
   // Recruitment process data
   DATA_INTEGER(SR); //0:HS, 1:BH, 2:RI
@@ -42,6 +43,16 @@ Type objective_function<Type>::operator() ()
   DATA_VECTOR(logZ_sd);
   DATA_INTEGER(restrict_mean);
 
+  // additional cpue data
+  DATA_INTEGER(use_add_cpue); // 0: Not use, 1: Use
+  DATA_SCALAR(fish_days); // duration of fishing days (usually 180)
+  DATA_IARRAY(add_cpue_info); // [column] 0: CPUE_ID, 1: Stock_ID, 2: Year_ID
+  DATA_VECTOR(add_cpue); // cpue data
+  DATA_VECTOR(add_cpue_tday); //day since the beginning of fishing season
+  DATA_ARRAY(add_cpue_covariate); // covariate data
+  DATA_IVECTOR(add_cpue_SD_key);
+  DATA_INTEGER(cpue_add_error_type); //0: (log)normal, 1: (log)laplace, 2: gamma
+
   // PARAMETERS //
   // Fishing process parameters
   PARAMETER_VECTOR(logSDlogF); // log(SD) for random walk of logF: process error
@@ -64,6 +75,11 @@ Type objective_function<Type>::operator() ()
   // Random effects
   PARAMETER_ARRAY(logN); //matrix of 2 rows x NYear colums
   PARAMETER_ARRAY(logF); //matrix of 2 rows x NYear colums
+
+  // Parameters related to add_cpue
+  PARAMETER_VECTOR(logQ_add); //
+  PARAMETER_VECTOR(logSDcpue_add);
+  PARAMETER_ARRAY(alpha);
 
   array<Type> F(NStock,NYear);
   array<Type> N(NStock,NYear);
@@ -118,10 +134,12 @@ Type objective_function<Type>::operator() ()
 
   if(logF_diff==0){
     for(int i=1;i<NYear;i++){
-      nll+=neg_log_densityF(logF.col(i)-logF.col(i-1));
-      SIMULATE {
-        logF.col(i)=logF.col(i-1)+neg_log_densityF.simulate();
-        F.col(i)=exp(logF.col(i));
+      if (F_incl_w(i)>0) {
+        nll+=neg_log_densityF(logF.col(i)-logF.col(i-1));
+        SIMULATE {
+          logF.col(i)=logF.col(i-1)+neg_log_densityF.simulate();
+          F.col(i)=exp(logF.col(i));
+        }
       }
     } // F process likelihood
   }else{
@@ -138,23 +156,25 @@ Type objective_function<Type>::operator() ()
   vector<Type> sum_logZ_w(NStock);
   sum_logZ.fill(0.0);
   sum_logZ_w.fill(0.0);
-  for(int i=0;i<NStock;i++){
-    for(int j=0;j<NYear;j++){
-      // sum_logZ(i) += logZ_w(i,j)*log(F(i,j)+M(i,j));
-      // sum_logZ(i) += logZ_w(i,j)*(F(i,j)+M(i,j));
-      sum_logZ(i) += logZ_w(i,j)*(F(i,j));
-      sum_logZ_w(i) += logZ_w(i,j);
-      if(restrict_mean==0){
-        if(logZ_w(i,j)>Type(0.0)){
-          // nll-=dnorm(log(F(i,j)+M(i,j)),logZ_mean(i),logZ_sd(i),true);
-          nll-=dnorm(log(F(i,j)),logZ_mean(i),logZ_sd(i),true);
+  if (use_add_cpue==0) {
+    for(int i=0;i<NStock;i++){
+      for(int j=0;j<NYear;j++){
+        // sum_logZ(i) += logZ_w(i,j)*log(F(i,j)+M(i,j));
+        // sum_logZ(i) += logZ_w(i,j)*(F(i,j)+M(i,j));
+        sum_logZ(i) += logZ_w(i,j)*(F(i,j));
+        sum_logZ_w(i) += logZ_w(i,j);
+        if(restrict_mean==0){
+          if(logZ_w(i,j)>Type(0.0)){
+            // nll-=dnorm(log(F(i,j)+M(i,j)),logZ_mean(i),logZ_sd(i),true);
+            nll-=dnorm(log(F(i,j)),logZ_mean(i),logZ_sd(i),true);
+          }
         }
       }
-    }
-    if(restrict_mean==1){
-      if(sum_logZ_w(i)>Type(0.0)){
-        // nll-=dnorm(sum_logZ(i)/sum_logZ_w(i),logZ_mean(i),logZ_sd(i),true);
-        nll-=dnorm(log(sum_logZ(i)/sum_logZ_w(i)),logZ_mean(i),logZ_sd(i),true);
+      if(restrict_mean==1){
+        if(sum_logZ_w(i)>Type(0.0)){
+          // nll-=dnorm(sum_logZ(i)/sum_logZ_w(i),logZ_mean(i),logZ_sd(i),true);
+          nll-=dnorm(log(sum_logZ(i)/sum_logZ_w(i)),logZ_mean(i),logZ_sd(i),true);
+        }
       }
     }
   }
@@ -163,6 +183,10 @@ Type objective_function<Type>::operator() ()
   vector<Type> rec_a=exp(rec_loga);
   vector<Type> rec_b=exp(rec_logb);
   vector<Type> rec_SD=exp(rec_logSD);
+  array<Type> rec_resid(NStock,NYear);
+  rec_resid.fill(0.0);
+  array<Type> pred_N(NStock,NYear);
+  pred_N(0.0);
 
   for(int j=1;j<NYear;j++){
     vector<Type> pred_logN(NStock); // logN predicted from stock-recruitment relationship
@@ -205,6 +229,8 @@ Type objective_function<Type>::operator() ()
     using namespace density;  // using multivariate normal distribution
     MVNORM_t<Type> neg_log_densityR(rec_var);  // with the var-cov matirix "rec_var" for MVN
     nll+=neg_log_densityR(logN.col(j)-pred_logN); // Recruit process likelihood
+    pred_N.col(j)+=exp(pred_logN);
+    rec_resid.col(j)+=logN.col(j)-pred_logN;
     SIMULATE{
       logN.col(j)=pred_logN+neg_log_densityR.simulate();
       N.col(j)=exp(logN.col(j));
@@ -229,6 +255,78 @@ Type objective_function<Type>::operator() ()
     }
   }
 
+  // additional_cpue_data
+  // vector<Type> Q_add = logQ_add;
+  vector<Type> SDcpue_add = exp(logSDcpue_add);
+  vector<Type> pred_log_cpue_add(add_cpue.size());
+  pred_log_cpue_add.fill(0.0);
+  vector<Type> resid_add(add_cpue.size());
+  resid_add.fill(0.0);
+  vector<Type> shape(add_cpue.size());
+  shape.fill(0.0);
+  if (use_add_cpue == 1) {
+    for (int i=0;i<add_cpue.size();i++) {
+      pred_log_cpue_add(i) += logQ_add(add_cpue_info(i,0));
+      pred_log_cpue_add(i) += logN(add_cpue_info(i,1),add_cpue_info(i,2));
+      pred_log_cpue_add(i) -= (F(add_cpue_info(i,1),add_cpue_info(i,2))+M(add_cpue_info(i,1),add_cpue_info(i,2)))*add_cpue_tday(i)/fish_days;
+      for (int j=0;j<add_cpue_covariate.cols();j++) {
+        pred_log_cpue_add(i) += alpha(add_cpue_info(i,0),j)*add_cpue_covariate(i,j);
+      }
+    }
+  }
+  if (use_add_cpue > 1) {
+    for(int i=0;i<NStock;i++){
+      for(int j=0;j<NYear;j++){
+        if (use_add_cpue == 2) {
+          sum_logZ(i) += logZ_w(i,j)*(F(i,j)+M(i,j));
+        } else {
+          sum_logZ(i) += logZ_w(i,j)*log(F(i,j)+M(i,j));
+        }
+        sum_logZ_w(i) += logZ_w(i,j);
+      }
+    }
+    for (int i=0;i<add_cpue.size();i++) {
+      pred_log_cpue_add(i) += logQ_add(add_cpue_info(i,0)); // intercept
+      if (use_add_cpue == 2) {
+        pred_log_cpue_add(i) -= (sum_logZ(add_cpue_info(i,0))/sum_logZ_w(add_cpue_info(i,0)))*add_cpue_tday(i)/fish_days;
+      } else {
+        pred_log_cpue_add(i) -= exp(sum_logZ(add_cpue_info(i,0))/sum_logZ_w(add_cpue_info(i,0)))*add_cpue_tday(i)/fish_days;
+      }
+      for (int j=0;j<add_cpue_covariate.cols();j++) {
+        pred_log_cpue_add(i) += alpha(add_cpue_info(i,0),j)*add_cpue_covariate(i,j);
+      }
+    }
+  }
+
+  if (use_add_cpue > 0) {
+    for (int i=0;i<add_cpue.size();i++) {
+      if (cpue_add_error_type == 0) { //lognormal
+        resid_add(i) += log(add_cpue(i))-pred_log_cpue_add(i);
+        nll -= dnorm(resid_add(i), Type(0.0), SDcpue_add(add_cpue_SD_key(add_cpue_info(i,0))), true);
+      } else {
+        if (cpue_add_error_type == 1) { //log-Laplace
+          resid_add(i) = CppAD::CondExpLe(log(add_cpue(i)),pred_log_cpue_add(i),pred_log_cpue_add(i)-log(add_cpue(i)),log(add_cpue(i))-pred_log_cpue_add(i));
+          nll -= -log(Type(2.0))+dexp(resid_add(i),Type(1.0)/SDcpue_add(add_cpue_SD_key(add_cpue_info(i,0))),true);
+        } else {
+          if (cpue_add_error_type == 2) { // gamma
+            shape(i) += exp(pred_log_cpue_add(i))/SDcpue_add(add_cpue_SD_key(add_cpue_info(i,0)));
+            nll -= dgamma(add_cpue(i), shape(i), SDcpue_add(add_cpue_SD_key(add_cpue_info(i,0))), true);
+          } else {
+            if (cpue_add_error_type == 3) { //normal (NOT lognormal)
+              resid_add(i) += add_cpue(i)-exp(pred_log_cpue_add(i));
+              nll -= dnorm(resid_add(i), Type(0.0), SDcpue_add(add_cpue_SD_key(add_cpue_info(i,0))), true);
+            } else {
+              if (cpue_add_error_type == 4) { //Laplace (NOT log-Laplace)
+                resid_add(i) = CppAD::CondExpLe(add_cpue(i),exp(pred_log_cpue_add(i)),exp(pred_log_cpue_add(i))-add_cpue(i),add_cpue(i)-exp(pred_log_cpue_add(i)));
+                nll -= -log(Type(2.0))+dexp(resid_add(i),Type(1.0)/SDcpue_add(add_cpue_SD_key(add_cpue_info(i,0))),true);
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
   SIMULATE{
     REPORT(logF);
     REPORT(logN);
@@ -236,8 +334,8 @@ Type objective_function<Type>::operator() ()
     REPORT(Index);
     REPORT(F);
     REPORT(N);
-    REPORT(predC);
-    REPORT(SSN);
+    // REPORT(predC);
+    // REPORT(SSN);
   }
 
   ADREPORT(logF);
@@ -246,9 +344,17 @@ Type objective_function<Type>::operator() ()
   ADREPORT(predC);
   ADREPORT(N);
   ADREPORT(SSN);
-  // ADREPORT(rec_a);
-  // ADREPORT(rec_b);
-  // ADREPORT(rec_SD);
+  ADREPORT(rec_a);
+  ADREPORT(rec_b);
+  ADREPORT(rec_SD);
+  ADREPORT(pred_log_cpue_add);
+  ADREPORT(resid_add);
+  ADREPORT(SDcpue_add);
+  ADREPORT(sum_logZ);
+  ADREPORT(sum_logZ_w);
+  ADREPORT(pred_N);
+  // ADREPORT(rec_resid);
+  // ADREPORT(shape);
 
   return nll;
 }
