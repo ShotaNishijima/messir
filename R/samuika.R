@@ -27,7 +27,7 @@
 #' @param scale_num_to_mass scaling multiplier in conversion of number to mass
 #' @param bias_correct bias correct option in \code{sdreport}
 #' @param fixed_par which parameters among \code{c("a","b","sd","rec_rho","SDlogF","rho_SDlogF","SDlogC","q","SDlogCPUE")} are fixed at their initial values
-#' @param map_add added factor to map other than fixed_per
+#' @param map_add added factor to map other than fixed_par
 #'
 #' @encoding UTF-8
 #' @export
@@ -56,6 +56,9 @@ samuika = function(
   add_cpue_error_type = 0,
   add_cpue_all = 1, # 0: FALSE, 1: modeling E(F+M), 2: modeling log(F+M)
   Fprocess_remove_year = NULL,
+  # add_fixed_F = 0,
+  # lambda = 0,
+  p0_list = NULL,
   M = 0.6,
   Pope = FALSE,
   scale_num_to_mass = 0.1,
@@ -264,7 +267,10 @@ samuika = function(
   }
 
   data_list = list(NYear=NYear,NStock=NStock,M=M_mat,Weight=weight_mat,
-                   SDlogF_key=SDlogF_key,logF_diff=logF_diff,F_incl_w = F_incl_w,
+                   SDlogF_key=SDlogF_key,logF_diff=logF_diff,
+                   F_incl_w = F_incl_w,
+                   # lambda = lambda,
+                   # add_fixed_F=as.numeric(add_fixed_F),
                    SR=SR_tmb,reca_key=reca_key,recb_key=recb_key,recSD_key=recSD_key,
                    NCatch=NCatch,Catch=Catch,Pope=as.numeric(Pope),Catch_key=Catch_key,scale_num_to_mass=scale_num_to_mass,
                    NIndex=NIndex,Index=Index,Index_key=Index_key,
@@ -273,24 +279,29 @@ samuika = function(
                    add_cpue=add_cpue2,add_cpue_tday=add_cpue_tday,add_cpue_covariate=add_cpue_covariate,
                    add_cpue_SD_key = add_cpue_SD_key,cpue_add_error_type = add_cpue_error_type)
 
-  param_init = list(
-    logSDlogF = rep_len(log(SDlogF_init),max(SDlogF_key)+1),
-    rho_SDlogF = rho_SDlogF_init,
-    rec_loga = rep_len(log(reca_init),max(reca_key)+1),
-    rec_logb = rep_len(log(recb_init),max(recb_key)+1),
-    rec_logSD = rep_len(log(recSD_init),max(recSD_key)+1),
-    trans_rho = trans_rho_init,
-    logSDlogC = rep_len(log(SDlogC_init),max(Catch_key[,3])+1),
-    logQ = rep_len(log(q_init),max(Index_key[,3])+1),
-    logSDcpue = rep_len(log(SDcpue_init), max(Index_key[,4])+1),
-    beta = rep(1,length(beta_fix)),
-    logN = matrix(log(23.7),nrow=dim(weight_mat)[1],ncol=dim(weight_mat)[2]),
-    logF = matrix(log(0.38),nrow=dim(weight_mat)[1],ncol=dim(weight_mat)[2]),
-    logQ_add = rep(log(1),length(unique(add_cpue_info2[,1]))),
-    logSDcpue_add = rep(log(1),length(unique(add_cpue_SD_key))),
-    # logSDcpue_add = rep(log(0.001),length(unique(add_cpue_SD_key))),
-    alpha = matrix(0,ncol=ncol(add_cpue_covariate),nrow=length(unique(add_cpue_info2[,1])))
-  )
+  if (is.null(p0_list)) {
+    param_init = list(
+      logSDlogF = rep_len(log(SDlogF_init),max(SDlogF_key)+1),
+      rho_SDlogF = rho_SDlogF_init,
+      # add_logF = rep(log(0),sum(F_incl_w==0)),
+      rec_loga = rep_len(log(reca_init),max(reca_key)+1),
+      rec_logb = rep_len(log(recb_init),max(recb_key)+1),
+      rec_logSD = rep_len(log(recSD_init),max(recSD_key)+1),
+      trans_rho = trans_rho_init,
+      logSDlogC = rep_len(log(SDlogC_init),max(Catch_key[,3])+1),
+      logQ = rep_len(log(q_init),max(Index_key[,3])+1),
+      logSDcpue = rep_len(log(SDcpue_init), max(Index_key[,4])+1),
+      beta = rep(1,length(beta_fix)),
+      logN = matrix(log(23.7),nrow=dim(weight_mat)[1],ncol=dim(weight_mat)[2]),
+      logF = matrix(log(0.38),nrow=dim(weight_mat)[1],ncol=dim(weight_mat)[2]),
+      logQ_add = rep(log(1),length(unique(add_cpue_info2[,1]))),
+      logSDcpue_add = rep(log(1),length(unique(add_cpue_SD_key))),
+      # logSDcpue_add = rep(log(0.001),length(unique(add_cpue_SD_key))),
+      alpha = matrix(0,ncol=ncol(add_cpue_covariate),nrow=length(unique(add_cpue_info2[,1])))
+    )
+  } else {
+    param_init = p0_list
+  }
 
   map = list()
   # map$logSDcpue_add = rep(factor(NA), length(param_init$logSDcpue_add))
@@ -358,6 +369,9 @@ samuika = function(
       map[[names(tmp$map_add)[i]]] <- map_add[[i]]
     }
   }
+  # if (add_fixed_F==0) {
+  #   map$add_logF = rep(factor(NA),length(param_init$add_logF))
+  # }
 
   f = TMB::MakeADFun(data=data_list, parameters = param_init, random = c("logN","logF"), DLL="samuika",
                      map = map, silent=silent)
@@ -563,7 +577,7 @@ samuika = function(
 #' @param n number of maximum removed years
 #' @encoding UTF-8
 #' @export
-retro_samuika = function(samuika_res, n=5, first_remove_catch_year = NULL, first_remove_index_year = NULL) {
+retro_samuika = function(samuika_res, n=5, first_remove_catch_year = NULL, first_remove_index_year = NULL,use_p0 = FALSE) {
   RES=list()
   RES$full <- res.c <- samuika_res
 
@@ -589,9 +603,12 @@ retro_samuika = function(samuika_res, n=5, first_remove_catch_year = NULL, first
     input_tmp$catch_data = catch_data2
     input_tmp$index_data = index_data2
 
-    if (!is.null(input_tmp$logZ_weight)) {
-      logZ_weight2 = dplyr::filter(input_tmp$logZ_weight, Year < max(Year))
-      input_tmp$logZ_weight = logZ_weight
+    # if (!is.null(input_tmp$logZ_weight)) {
+    #   logZ_weight2 = dplyr::filter(input_tmp$logZ_weight, Year < max(Year))
+    #   input_tmp$logZ_weight = logZ_weight
+    # }
+    if (use_p0) {
+      input_tmp$p0_list = res.c$par_list
     }
 
     res.c = do.call(samuika, input_tmp)

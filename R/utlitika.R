@@ -5,7 +5,7 @@
 #' @param model \code{samuika} object
 #' @encoding UTF-8
 #' @export
-out_summary_estimate <- function(model) {
+out_summary_estimate <- function(model,CI=0.8) {
   samuika_model = model
   Summary_PopDyn = samuika_model$Summary_PopDyn %>%
     select(Stock_ID, Year, Stock_biomass, Spawning_biomass, F, Catch_est) %>%
@@ -42,7 +42,7 @@ out_summary_estimate <- function(model) {
 
   Summary_PopDyn = Summary_PopDyn %>%
     mutate(CV = SE/value) %>%
-    mutate(Cz = exp(qnorm(0.9)*sqrt(log(1+CV^2)))) %>%
+    mutate(Cz = exp(qnorm(CI+(1-CI)/2)*sqrt(log(1+CV^2)))) %>%
     mutate(lower = value/Cz, upper = value*Cz) %>%
     mutate(type = "Estimate") %>%
     mutate(
@@ -174,3 +174,114 @@ visualize_kobe_chart = function(
   (g1)
 }
 
+
+#' plotting (multiple) samuika results
+#' @import ggplot2
+#' @param list_samuika_res list of samuika objects
+#' @encoding UTF-8
+#' @export
+plot_samuika_estimates = function(list_samuika_res,
+                                  model_name = NULL,
+                                  Stock_ID=0,
+                                  CI = 0.8,
+                                  CI_plot = TRUE,
+                                  legend_position = "bottom",
+                                  legend_text_size = 1.2,
+                                  legend_key_size = 1
+) {
+  message(paste0("plotting Stock_ID=",Stock_ID," OK?"))
+  NRES = length(list_samuika_res)
+  name_list = NULL
+
+  for (i in 1:NRES) {
+    res = list_samuika_res[[i]]
+    if (!is.null(model_name)) {
+      name = model_name[i]
+    } else {
+      name = names(list_samuika_res)[i]
+    }
+    if (is.null(name)) {
+      name = paste0("model",i)
+    }
+    name_list = c(name_list,name)
+    out_samuika = out_summary_estimate(res,CI=CI) %>%
+      mutate(model0 = name)
+    if (i==1) {
+      Summary_all = out_samuika
+    } else {
+      Summary_all = full_join(Summary_all,out_samuika)
+    }
+  }
+  Summary_all = Summary_all %>%
+    mutate(category_f2 = factor(category_f, level = c("Stock_biomass","Spawning_biomass","F","Catch"))) %>%
+    mutate(model = factor(model0, level = name_list))
+
+  g1 = ggplot(Summary_all, aes(x=Year))
+  if (CI_plot) {
+    g1 = g1+geom_ribbon(aes(ymin=lower,ymax=upper,group=model,fill=model),alpha=0.3)
+  }
+  g1 = g1 +
+    geom_path(aes(y=value,group=model,colour=model,linetype=model),size=1.5)+
+    facet_wrap(~category_f2,scales="free_y")+
+    # scale_colour_manual(values = c("blue","red"))+
+    # scale_fill_manual(values = c("blue","red"))+
+    # scale_linetype_manual(values=c("solid","dashed"))+
+    # # scale_size_manual(values=c(100,100,50))+
+    theme_bw(base_size=18)+
+    theme(legend.position=legend_position,legend.key.size=unit(legend_key_size, "cm"),
+          legend.title=element_blank(),legend.text=element_text(size=rel(legend_text_size))
+    )+ylim(0,NA)+
+    # guides(linetype = guide_legend(override.aes = list(size = c(1.5,1.5))))+
+    ylab("")
+  g1
+}
+
+#' plotting retrospective analyses of samuika
+#' @import ggplot2
+#' @param samuika_retro samuika_retro object
+#' @encoding UTF-8
+#' @export
+plot_retro_samuika=function(samuika_retro,
+                            mohn=NULL,Stock_ID=0,latest_year=NULL,
+                            max_retro_year = NULL,forecast_year=1) {
+  message(paste0("plotting Stock_ID=",Stock_ID," OK?"))
+  if (is.null(latest_year)) {
+    latest_year = max(samuika_retro$Summary_PopDyn$Year)
+  }
+  if (is.null(max_retro_year)) {
+    max_retro_year = max(samuika_retro$Summary_PopDyn$retro_year)
+  }
+  retro_table = samuika_retro$Summary_PopDyn %>%
+    mutate(eval_year = latest_year+forecast_year-retro_year) %>%
+    filter(Year < eval_year+forecast_year) %>%
+    filter(Stock_ID == Stock_ID) %>%
+    select(Stock_ID, Year, Stock_biomass, Spawning_biomass, F, Catch_est, retro_year) %>%
+    gather(key=variable, value=value, -Stock_ID, -Year, -retro_year) %>%
+    mutate(variable_f = factor(variable, levels=c("Stock_biomass","Spawning_biomass","F","Catch_est")),
+           retro_year_f = factor(retro_year, levels=0:max_retro_year))
+
+  max_value = retro_table %>% group_by(variable_f) %>%
+    summarise(value=max(value)*1.15,Year=min(Year))
+
+  g4 = ggplot(data=filter(retro_table,retro_year>0), aes(x=Year, y=value)) +
+    geom_path(data = filter(retro_table,retro_year==0),aes(group=retro_year_f,colour=retro_year_f),size=1.5,show.legend=FALSE,colour="black")+
+    geom_path(aes(group=retro_year_f,colour=retro_year_f),size=1.2,show.legend=FALSE)+
+    facet_wrap(~variable_f,ncol=2,scales="free_y")+
+    geom_blank(data = max_value)+
+    theme_bw(base_size=18)+ylab("")+
+    ylim(0,NA)
+
+  if (!is.null(mohn)) {
+    rho_data = mohn$Summary %>%
+      select(-N,-SSN) %>%
+      rename(Stock_biomass=B,Spawning_biomass=SSB,Catch_est=Catch) %>%
+      gather(key=variable,value=rho) %>%
+      mutate(variable_f = factor(variable, levels=c("Stock_biomass","Spawning_biomass","F","Catch_est"))) %>%
+      mutate(label=sprintf("rho == %.2f",rho)) %>%
+      mutate(Year=min(retro_table$Year),value=max_value$value)
+    g4 = g4 +
+      geom_text(data=rho_data, parse=TRUE, aes(label=label,hjust=0,vjust=1),size=6)
+
+  }
+  g4
+}

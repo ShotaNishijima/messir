@@ -5,7 +5,7 @@
 \alias{out_summary_estimate}
 \title{output a table of samuika results}
 \usage{
-out_summary_estimate(model)
+out_summary_estimate(model, CI = 0.8)
 }
 \arguments{
 \item{model}{\code{samuika} object}
