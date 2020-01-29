@@ -11,7 +11,7 @@ plot_retro_samuika(
   Stock_ID = 0,
   latest_year = NULL,
   max_retro_year = NULL,
-  forecast_year = 1
+  forecast_year = 0
 )
 }
 \arguments{

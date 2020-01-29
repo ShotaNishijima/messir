@@ -651,6 +651,9 @@ get_mohn = function(retro_res, first_eval_year = NULL, lag_year = 1) {
   Summary = tibble(N=rowMeans(N_res),B=rowMeans(N_res),
                    SSN=rowMeans(SSN_res),SSB=rowMeans(SSB_res),
                    F=rowMeans(F_res),Catch=rowMeans(C_res))
+  Summary = Summary %>%
+    mutate(Stock_ID = unique(retro_res$full$input$catch_data$Stock_ID)) %>%
+    select(Stock_ID,everything())
 
   RES = list(Summary=Summary,N_res=N_res,B_res=B_res,SSN_res=SSN_res,
              SSB_res=SSB_res,F_res=F_res,C_res=C_res)

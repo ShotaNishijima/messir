@@ -204,8 +204,10 @@ plot_samuika_estimates = function(list_samuika_res,
       name = paste0("model",i)
     }
     name_list = c(name_list,name)
+    Stock_ID_dbl = Stock_ID
     out_samuika = out_summary_estimate(res,CI=CI) %>%
-      mutate(model0 = name)
+      mutate(model0 = name) %>%
+      dplyr::filter(Stock_ID == Stock_ID_dbl)
     if (i==1) {
       Summary_all = out_samuika
     } else {
@@ -246,7 +248,7 @@ plot_samuika_estimates = function(list_samuika_res,
 #' @export
 plot_retro_samuika=function(samuika_retro,
                             mohn=NULL,Stock_ID=0,latest_year=NULL,
-                            max_retro_year = NULL,forecast_year=1) {
+                            max_retro_year = NULL,forecast_year=0) {
   message(paste0("plotting Stock_ID=",Stock_ID," OK?"))
   if (is.null(latest_year)) {
     latest_year = max(samuika_retro$Summary_PopDyn$Year)
@@ -254,10 +256,11 @@ plot_retro_samuika=function(samuika_retro,
   if (is.null(max_retro_year)) {
     max_retro_year = max(samuika_retro$Summary_PopDyn$retro_year)
   }
+  Stock_ID_dbl = Stock_ID
   retro_table = samuika_retro$Summary_PopDyn %>%
     mutate(eval_year = latest_year+forecast_year-retro_year) %>%
     filter(Year < eval_year+forecast_year) %>%
-    filter(Stock_ID == Stock_ID) %>%
+    filter(Stock_ID == Stock_ID_dbl) %>%
     dplyr::select(Stock_ID, Year, Stock_biomass, Spawning_biomass, F, Catch_est, retro_year) %>%
     gather(key=variable, value=value, -Stock_ID, -Year, -retro_year) %>%
     mutate(variable_f = factor(variable, levels=c("Stock_biomass","Spawning_biomass","F","Catch_est")),
@@ -276,9 +279,10 @@ plot_retro_samuika=function(samuika_retro,
 
   if (!is.null(mohn)) {
     rho_data = mohn$Summary %>%
+      dplyr::filter(Stock_ID==Stock_ID_dbl) %>%
       dplyr::select(-N,-SSN) %>%
       rename(Stock_biomass=B,Spawning_biomass=SSB,Catch_est=Catch) %>%
-      gather(key=variable,value=rho) %>%
+      gather(key=variable,value=rho,-Stock_ID) %>%
       mutate(variable_f = factor(variable, levels=c("Stock_biomass","Spawning_biomass","F","Catch_est"))) %>%
       mutate(label=sprintf("rho == %.2f",rho)) %>%
       mutate(Year=min(retro_table$Year),value=max_value$value)
@@ -334,9 +338,10 @@ plot_SR_samuika = function(list_samuika_res,
                                mutate(model0 = name))
     }
   }
+  Stock_ID_dbl = Stock_ID
   SRdata_est = SRdata_est %>%
     mutate(model = factor(model0, level = name_list)) %>%
-    filter(Stock_ID == Stock_ID)
+    filter(Stock_ID == Stock_ID_dbl)
 
   xmax = max(SRdata_est$Spawning_number)*xmax_ratio
   ymax = max(SRdata_est$Stock_number)*ymax_ratio
@@ -347,9 +352,10 @@ plot_SR_samuika = function(list_samuika_res,
     if (length(res$input$regime_key)!= 1 && !is.null(res$input$regime_year)) {
       warning("This function does not deal with regimes; only the first regime SR curve is plotted")
     }
-    a = res$Summary_PopDyn %>% filter(Stock_ID==Stock_ID) %>% select(rec_a) %>% unique()
+    Stock_ID_dbl = Stock_ID
+    a = res$Summary_PopDyn %>% filter(Stock_ID==Stock_ID_dbl) %>% select(rec_a) %>% unique()
     a = as.numeric(a[1])
-    b = res$Summary_PopDyn %>% filter(Stock_ID==Stock_ID) %>% select(rec_b) %>% unique()
+    b = res$Summary_PopDyn %>% filter(Stock_ID==Stock_ID_dbl) %>% select(rec_b) %>% unique()
     b = as.numeric(b[1])
 
     R_pred = SRF(a=a,b=b,x=SSN,SR=res$input$SR)
@@ -361,9 +367,10 @@ plot_SR_samuika = function(list_samuika_res,
                                 mutate(model0 = name_list[i]))
     }
   }
+  Stock_ID_dbl = Stock_ID
   SRdata_pred = SRdata_pred %>%
     mutate(model = factor(model0, level = name_list)) %>%
-    filter(Stock_ID == Stock_ID)
+    filter(Stock_ID == Stock_ID_dbl)
 
   g1 = ggplot(data=NULL,aes(x=Spawning_number,y=Stock_number))+
     geom_path(data = SRdata_pred, aes(group=model,colour=model),size=path_size)
