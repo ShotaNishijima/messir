@@ -8,7 +8,7 @@
 out_summary_estimate <- function(model,CI=0.8) {
   samuika_model = model
   Summary_PopDyn = samuika_model$Summary_PopDyn %>%
-    select(Stock_ID, Year, Stock_biomass, Spawning_biomass, F, Catch_est) %>%
+    dplyr::select(Stock_ID, Year, Stock_biomass, Spawning_biomass, F, Catch_est) %>%
     gather(key=category, value=value, -Stock_ID, -Year) %>%
     mutate(category_f = factor(category,level=c("Stock_biomass","Spawning_biomass","F","Catch_est")))
 
@@ -54,7 +54,7 @@ out_summary_estimate <- function(model,CI=0.8) {
                               category == "Biomass" ~ "Stock_biomass",
                               category == "Spawning_Biomass" ~ "Spawning_biomass",
                               TRUE ~ category_f)) %>%
-    select(-category,-category_f)
+    dplyr::select(-category,-category_f)
 
   Summary_PopDyn = Summary_PopDyn %>%
     rename(category=category2, category_f=category_f2)
@@ -92,7 +92,7 @@ SRF = function(a,b,x,SR="HS") {
   })
 }
 
-#' Making a combined list with original list name(s)
+#' Function to get stock-recruit data from samuika object
 #' @param model samuika object
 #' @encoding UTF-8
 #' @export
@@ -238,6 +238,9 @@ plot_samuika_estimates = function(list_samuika_res,
 
 #' plotting retrospective analyses of samuika
 #' @import ggplot2
+#' @import dplyr
+#' @importFrom  dplyr select
+#' @importFrom  dplyr filter
 #' @param samuika_retro samuika_retro object
 #' @encoding UTF-8
 #' @export
@@ -255,7 +258,7 @@ plot_retro_samuika=function(samuika_retro,
     mutate(eval_year = latest_year+forecast_year-retro_year) %>%
     filter(Year < eval_year+forecast_year) %>%
     filter(Stock_ID == Stock_ID) %>%
-    select(Stock_ID, Year, Stock_biomass, Spawning_biomass, F, Catch_est, retro_year) %>%
+    dplyr::select(Stock_ID, Year, Stock_biomass, Spawning_biomass, F, Catch_est, retro_year) %>%
     gather(key=variable, value=value, -Stock_ID, -Year, -retro_year) %>%
     mutate(variable_f = factor(variable, levels=c("Stock_biomass","Spawning_biomass","F","Catch_est")),
            retro_year_f = factor(retro_year, levels=0:max_retro_year))
@@ -273,7 +276,7 @@ plot_retro_samuika=function(samuika_retro,
 
   if (!is.null(mohn)) {
     rho_data = mohn$Summary %>%
-      select(-N,-SSN) %>%
+      dplyr::select(-N,-SSN) %>%
       rename(Stock_biomass=B,Spawning_biomass=SSB,Catch_est=Catch) %>%
       gather(key=variable,value=rho) %>%
       mutate(variable_f = factor(variable, levels=c("Stock_biomass","Spawning_biomass","F","Catch_est"))) %>%
@@ -284,4 +287,237 @@ plot_retro_samuika=function(samuika_retro,
 
   }
   g4
+}
+
+#' plotting stock-recruitment curve from samuika objects
+#' @import ggplot2
+#' @import dplyr
+#' @importFrom  dplyr select
+#' @importFrom  dplyr filter
+#' @param list_samuika_res list of samuika objects
+#' @param model_name model names used in legend
+#' @encoding UTF-8
+#' @export
+plot_SR_samuika = function(list_samuika_res,
+                           model_name = NULL,
+                           Stock_ID=0,
+                           plot_point = TRUE,
+                           draw_replace = TRUE,
+                           Smsy = NULL,
+                           xmax_ratio = 1.3,
+                           ymax_ratio = 1.1,
+                           path_size=1.2,
+                           legend_position = "right",
+                           legend_text_size = 1.2,
+                           legend_key_size = 1) {
+  message(paste0("plotting Stock_ID=",Stock_ID," OK?"))
+  NRES = length(list_samuika_res)
+  name_list = NULL
+
+  for (i in 1:NRES) {
+    res = list_samuika_res[[i]]
+    if (!is.null(model_name)) {
+      name = model_name[i]
+    } else {
+      name = names(list_samuika_res)[i]
+    }
+    if (is.null(name)) {
+      name = paste0("model",i)
+    }
+    name_list = c(name_list,name)
+
+    if (i==1) {
+      SRdata_est = get_SRdata(res) %>%
+        mutate(model0 = name)
+    } else {
+      SRdata_est = full_join(SRdata_est,get_SRdata(res) %>%
+                               mutate(model0 = name))
+    }
+  }
+  SRdata_est = SRdata_est %>%
+    mutate(model = factor(model0, level = name_list)) %>%
+    filter(Stock_ID == Stock_ID)
+
+  xmax = max(SRdata_est$Spawning_number)*xmax_ratio
+  ymax = max(SRdata_est$Stock_number)*ymax_ratio
+  SSN = seq(0,xmax,length=1000)
+
+  for (i in 1:NRES) {
+    res = list_samuika_res[[i]]
+    if (length(res$input$regime_key)!= 1 && !is.null(res$input$regime_year)) {
+      warning("This function does not deal with regimes; only the first regime SR curve is plotted")
+    }
+    a = res$Summary_PopDyn %>% filter(Stock_ID==Stock_ID) %>% select(rec_a) %>% unique()
+    a = as.numeric(a[1])
+    b = res$Summary_PopDyn %>% filter(Stock_ID==Stock_ID) %>% select(rec_b) %>% unique()
+    b = as.numeric(b[1])
+
+    R_pred = SRF(a=a,b=b,x=SSN,SR=res$input$SR)
+    if (i==1) {
+      SRdata_pred = tibble(Stock_number=R_pred,Spawning_number=SSN) %>%
+        mutate(model0 = name_list[i])
+    } else {
+      SRdata_pred = full_join(SRdata_pred,tibble(Stock_number=R_pred,Spawning_number=SSN) %>%
+                                mutate(model0 = name_list[i]))
+    }
+  }
+  SRdata_pred = SRdata_pred %>%
+    mutate(model = factor(model0, level = name_list)) %>%
+    filter(Stock_ID == Stock_ID)
+
+  g1 = ggplot(data=NULL,aes(x=Spawning_number,y=Stock_number))+
+    geom_path(data = SRdata_pred, aes(group=model,colour=model),size=path_size)
+  if (plot_point) {
+    g1 = g1 + geom_point(data = SRdata_est, aes(group=model,colour=model))
+  }
+  g1 = g1 + coord_cartesian(xlim=c(0,xmax),ylim=c(0,ymax),expand=0) +
+    theme_bw(base_size=18)+
+    theme(legend.position=legend_position,legend.key.size=unit(legend_key_size, "cm"),
+          legend.title=element_blank(),legend.text=element_text(size=rel(legend_text_size)))
+
+
+  if (draw_replace) {
+    g1 = g1 +
+      geom_abline(intercept=0,slope = exp(list_samuika_res[[1]]$input$M[1]),colour="gray",size=1,linetype="dashed")
+  }
+
+  if (!is.null(Smsy)) {
+    if (length(Smsy) != length(list_samuika_res)) {
+      stop("The length of SBmsy does not macth with that of list_samuika_res")
+    }
+    SBmsy_tbl = tibble(Spawning_number = Smsy, model0 = name_list) %>%
+      mutate(model = factor(model0, level = name_list))
+    g1 = g1+
+      geom_vline(data = SBmsy_tbl, aes(xintercept = Spawning_number, group=model, colour=model),
+                 linetype="dotted",size=1.2)
+  }
+  g1
+
+}
+
+
+#' Function for plotting future_res
+#' @import ggplot2
+#' @import dplyr
+#' @import tidyr
+#' @importFrom dplyr select
+#' @importFrom tidyr gather
+#' @param future_list list of \code{future_sim}
+#' @param title figure title
+#' @encoding UTF-8
+#' @export
+visualize_future = function(
+  future_list,
+  scenario_name = NULL,
+  what_center = "mean", # or median or geomean
+  CI_range = 0.8, # NULL if not neccessary
+  title = NULL,
+  # example_number = 0, # number of described simulations
+  # seed = 12345, # seed for extracting examples
+  BRP = NULL, # under consideration...
+  line_size = 1,
+  legend_position = "right",
+  legend_text_size = 1.2,
+  legend_key_size = 1,
+  strip_text_size = 10,
+  base_size = 16,
+  BRP_line_size = 1
+) {
+
+  if (is.null(scenario_name)) {
+    for (i in 1:length(future_list)) {
+      scenario_name = c(scenario_name, sprintf("scenario_%s",i))
+    }
+  }
+
+  plot_data_all = tibble()
+  for (i in 1:length(future_list)) {
+
+    if (what_center == "mean") center_table = future_list[[i]]$mean_table
+    if (what_center == "median") center_table = future_list[[i]]$median_table
+    if (what_center == "geomean") center_table = future_list[[i]]$geomean_table
+
+    center_table = center_table %>%
+      mutate(Scenario = scenario_name[i],Range = "center")
+
+    plot_data_all = bind_rows(plot_data_all,center_table)
+
+    if (!is.null(CI_range)) {
+      lower_data = as_tibble(apply(future_list[[i]]$sim_array,c(1,2),quantile,probs = (1-CI_range)/2)) %>%
+        mutate(Status="Future",Scenario=scenario_name[i],Range="lower")
+      plot_data_all = bind_rows(plot_data_all, lower_data)
+      upper_data = as_tibble(apply(future_list[[i]]$sim_array,c(1,2),quantile,probs = 1-(1-CI_range)/2)) %>%
+        mutate(Status="Future",Scenario=scenario_name[i],Range="upper")
+      plot_data_all = bind_rows(plot_data_all, upper_data)
+    }
+  }
+
+  plot_data_all = dplyr::select(plot_data_all,
+                                Year,Stock_biomass,Spawning_biomass,Catch_biomass,F,
+                                Status,Scenario,Range) %>%
+    tidyr::gather(key=Y, value = value, Stock_biomass,Spawning_biomass,Catch_biomass,F)
+  # dplyr::distinct()
+
+  plot_data_center = mutate(plot_data_all,
+                            Y_f = factor(plot_data_all$Y,
+                                         levels=c("Stock_biomass","Spawning_biomass","Catch_biomass","F"))) %>%
+    filter(Range == "center")
+
+  plot_data_CI =  mutate(plot_data_all,
+                         Y_f = factor(plot_data_all$Y,
+                                      levels=c("Stock_biomass","Spawning_biomass","Catch_biomass","F"))) %>%
+    filter(Range != "center") %>%
+    spread(key = Range, value=value)
+
+  alpha = 0.4
+  g1 = ggplot(plot_data_center)
+
+  if (!is.null(BRP)) {
+    BRP_tbl = dplyr::select(BRP,Definition,Stock_biomass,Spawning_biomass,Catch_biomass,F) %>%
+      tidyr::gather(key=Y,value=value,-Definition) %>%
+      mutate(Y_f = factor(Y,levels=c("Stock_biomass","Spawning_biomass","Catch_biomass","F"))) %>%
+      mutate(Def_f = factor(Definition,levels=BRP$Definition))
+    g1 = g1 +
+      geom_hline(data = BRP_tbl, aes(yintercept=value,linetype=Def_f),colour="darkgray",size=BRP_line_size)
+    if (legend_position == "bottom") {
+      g1 = g1 + guides(fill=guide_legend(nrow=2),colour = guide_legend(nrow = 2),linetype = guide_legend(nrow = 2))
+    }
+  }
+
+  if (!is.null(CI_range)) {
+    g1 = g1 + geom_ribbon(data = plot_data_CI,
+                              aes(x=Year,ymin=lower,ymax=upper,
+                                  group=Scenario, fill=Scenario),alpha=alpha)
+  }
+  g1 = g1 + geom_line(data = dplyr::filter(plot_data_center),
+              aes(x=Year,y=value,group=Scenario, colour=Scenario),size=line_size)+
+    geom_line(data = dplyr::filter(plot_data_center,Status=="Past"&Scenario==scenario_name[1]),
+              aes(x=Year,y=value),size=line_size, colour="black") +
+    facet_wrap(~Y_f, scales="free_y") +
+    ylim(0,NA) +
+    theme_bw(base_size=base_size)+
+    theme(axis.title.y = element_blank())+
+    theme(legend.position=legend_position,legend.key.size=unit(legend_key_size, "cm"),
+          legend.title=element_blank(),legend.text=element_text(size=rel(legend_text_size)))+
+    theme(strip.text.x = element_text(size = strip_text_size))
+
+  if (!is.null(title)) g1 = g1 + ggtitle(title)
+
+  return(g1)
+}
+
+#' Function for calculating probability of achiveing biological reference points
+#' @import dplyr
+#' @import tidyr
+#' @param future_sim_res \code{future_sim} object
+#' @param ref_value value of biological reference points
+#' @param variable what variable ref_value indicates (default: "Spawning_biomass")
+#' @encoding UTF-8
+#' @export
+get_prob_ref = function(future_sim_res, ref_value, variable="Spawning_biomass") {
+  sim_table = future_sim_res$sim_array[,variable,]
+  func = function(x) mean(x>ref_value)
+  prob = apply(sim_table,1,func)
+  names(prob) <- rev(rev(future_sim_res$mean_table$Year)[1:length(prob)])
+  return(prob)
 }

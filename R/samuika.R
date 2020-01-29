@@ -430,7 +430,7 @@ samuika = function(
       RES$resid_cpue_add = as.numeric(VALUE[names(VALUE)=="resid_add"])
       add_cpue_table = add_cpue_info
       if (!is.null(add_cpue_covariate)) {
-        add_cpue_table = bind_cols(add_cpue_table, tibble(covariate=add_cpue_covariate))
+        add_cpue_table = bind_cols(add_cpue_table, tibble(cpue=add_cpue,tday = add_cpue_tday,covariate=add_cpue_covariate))
       }
       add_cpue_table = add_cpue_table %>%
         mutate(pred_cpue = RES$pred_cpue_add,resid = RES$resid_cpue_add)
@@ -611,7 +611,10 @@ retro_samuika = function(samuika_res, n=5, first_remove_catch_year = NULL, first
       input_tmp$p0_list = res.c$par_list
     }
 
-    res.c = do.call(samuika, input_tmp)
+    res.c = try(do.call(samuika, input_tmp))
+    if (class(res.c)=="try-error") {
+      stop(paste0("Error in ",i,"th trial"))
+    }
     RES$retro[[i]] = res.c
     Summary_PopDyn = Summary_PopDyn %>%
       bind_rows(res.c$Summary_PopDyn %>% mutate(retro_year = i))

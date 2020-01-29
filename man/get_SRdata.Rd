@@ -3,7 +3,7 @@
 \encoding{UTF-8}
 \name{get_SRdata}
 \alias{get_SRdata}
-\title{Making a combined list with original list name(s)}
+\title{Function to get stock-recruit data from samuika object}
 \usage{
 get_SRdata(model)
 }
@@ -11,5 +11,5 @@ get_SRdata(model)
 \item{model}{samuika object}
 }
 \description{
-Making a combined list with original list name(s)
+Function to get stock-recruit data from samuika object
 }
