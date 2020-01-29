@@ -18,7 +18,8 @@ visualize_future(
   legend_key_size = 1,
   strip_text_size = 10,
   base_size = 16,
-  BRP_line_size = 1
+  BRP_line_size = 1,
+  palette_name = "Set1"
 )
 }
 \arguments{

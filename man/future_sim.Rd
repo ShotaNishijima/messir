@@ -25,13 +25,16 @@ future_sim(
   Ftarget = NULL,
   array_to_tibble = FALSE,
   sim_rec_resid = NULL,
-  scenario_name = NULL
+  scenario_name = NULL,
+  use_Catch_est = FALSE
 )
 }
 \arguments{
 \item{assess_data}{assessment data}
 
 \item{Fcurrent}{current fishing mortality coefficient}
+
+\item{use_Catch_est}{whether replacing \code{Catch_biomass} by \code{Catch_est} in \code{assess_data}}
 }
 \description{
 future simulation for Surume-Ika

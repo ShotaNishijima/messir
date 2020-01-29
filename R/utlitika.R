@@ -421,12 +421,17 @@ visualize_future = function(
   legend_key_size = 1,
   strip_text_size = 10,
   base_size = 16,
-  BRP_line_size = 1
+  BRP_line_size = 1,
+  palette_name = "Set1"
 ) {
 
   if (is.null(scenario_name)) {
     for (i in 1:length(future_list)) {
       scenario_name = c(scenario_name, sprintf("scenario_%s",i))
+    }
+  } else {
+    if (length(scenario_name) != length(future_list)) {
+      stop("The length of scenario_name does not match with that of future_list")
     }
   }
 
@@ -456,18 +461,27 @@ visualize_future = function(
                                 Year,Stock_biomass,Spawning_biomass,Catch_biomass,F,
                                 Status,Scenario,Range) %>%
     tidyr::gather(key=Y, value = value, Stock_biomass,Spawning_biomass,Catch_biomass,F)
-  # dplyr::distinct()
+  plot_data_all = plot_data_all %>%
+    rename(Scenario0 = Scenario) %>%
+    mutate(Scenario = factor(Scenario0, levels=scenario_name)) %>%
+    select(-Scenario0)
 
   plot_data_center = mutate(plot_data_all,
                             Y_f = factor(plot_data_all$Y,
                                          levels=c("Stock_biomass","Spawning_biomass","Catch_biomass","F"))) %>%
-    filter(Range == "center")
+    filter(Range == "center") %>%
+    rename(Scenario0 = Scenario) %>%
+    mutate(Scenario = factor(Scenario0, levels=scenario_name)) %>%
+    select(-Scenario0)
 
   plot_data_CI =  mutate(plot_data_all,
                          Y_f = factor(plot_data_all$Y,
                                       levels=c("Stock_biomass","Spawning_biomass","Catch_biomass","F"))) %>%
     filter(Range != "center") %>%
-    spread(key = Range, value=value)
+    spread(key = Range, value=value) %>%
+    rename(Scenario0 = Scenario) %>%
+    mutate(Scenario = factor(Scenario0, levels=scenario_name)) %>%
+    select(-Scenario0)
 
   alpha = 0.4
   g1 = ggplot(plot_data_center)
@@ -487,12 +501,14 @@ visualize_future = function(
   if (!is.null(CI_range)) {
     g1 = g1 + geom_ribbon(data = plot_data_CI,
                               aes(x=Year,ymin=lower,ymax=upper,
-                                  group=Scenario, fill=Scenario),alpha=alpha)
+                                  group=Scenario, fill=Scenario),alpha=alpha)+
+      scale_fill_brewer(palette=palette_name)
   }
   g1 = g1 + geom_line(data = dplyr::filter(plot_data_center),
               aes(x=Year,y=value,group=Scenario, colour=Scenario),size=line_size)+
     geom_line(data = dplyr::filter(plot_data_center,Status=="Past"&Scenario==scenario_name[1]),
               aes(x=Year,y=value),size=line_size, colour="black") +
+    scale_colour_brewer(palette=palette_name)+
     facet_wrap(~Y_f, scales="free_y") +
     ylim(0,NA) +
     theme_bw(base_size=base_size)+

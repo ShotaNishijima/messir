@@ -20,6 +20,7 @@ NULL
 #' future simulation for Surume-Ika
 #' @param assess_data assessment data
 #' @param Fcurrent current fishing mortality coefficient
+#' @param use_Catch_est whether replacing \code{Catch_biomass} by \code{Catch_est} in \code{assess_data}
 #' @encoding UTF-8
 #' @export
 future_sim = function(
@@ -43,12 +44,19 @@ future_sim = function(
   Ftarget = NULL, # Ftarget = beta*Fmsy
   array_to_tibble = FALSE,
   sim_rec_resid = NULL, # matrix of sim_year X nsim
-  scenario_name = NULL
+  scenario_name = NULL,
+  use_Catch_est = FALSE
 ) {
 
   argname = ls()
   arglist = lapply(argname,function(x) eval(parse(text=x)))
   names(arglist) = argname
+
+  if (use_Catch_est) {
+    if ("Catch_est" %in% colnames(assess_data)) {
+      assess_data$Catch_biomass <- assess_data$Catch_est
+    }
+  }
 
   # SR function
   if (SR == "HS") SRF = function(x,a=rec_arg$a,b=rec_arg$b) ifelse(x>b,b*a,x*a)
