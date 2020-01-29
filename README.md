@@ -9,7 +9,7 @@
 ```
 # install.package("devtools") # if not installed
 devtools::install_github("ShotaNishijima/messir")
-# if install dev branch
+# if you want to use dev branch
 # devtools::install_github("ShotaNishijima/messir@dev") 
 library(messir)
 ```
