@@ -259,7 +259,7 @@ plot_retro_samuika=function(samuika_retro,
   Stock_ID_dbl = Stock_ID
   retro_table = samuika_retro$Summary_PopDyn %>%
     mutate(eval_year = latest_year+forecast_year-retro_year) %>%
-    filter(Year < eval_year+forecast_year) %>%
+    filter(Year < eval_year+forecast_year+1) %>%
     filter(Stock_ID == Stock_ID_dbl) %>%
     dplyr::select(Stock_ID, Year, Stock_biomass, Spawning_biomass, F, Catch_est, retro_year) %>%
     gather(key=variable, value=value, -Stock_ID, -Year, -retro_year) %>%
