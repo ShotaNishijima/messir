@@ -544,3 +544,23 @@ get_prob_ref = function(future_sim_res, ref_value, variable="Spawning_biomass") 
   names(prob) <- rev(rev(future_sim_res$mean_table$Year)[1:length(prob)])
   return(prob)
 }
+
+
+#' Function for converting samuika result to the data for est_MSY
+#' @import dplyr
+#' @param samuika_res \code{samuika} object
+#' @param Stock_ID Stock_ID (default is 0)
+#' @encoding UTF-8
+#' @export
+convert_samuika_estMSY = function(samuika_res, Stock_ID = 0, scale_num_to_mass = NULL) {
+  message(paste0("plotting Stock_ID=",Stock_ID," OK?"))
+  model = samuika_res
+  M = samuika_res$input$M
+  if (is.null(scale_num_to_mass)) scale_num_to_mass = model$input$scale_num_to_mass
+  Stock_ID_tbl = as.numeric(Stock_ID)
+  assess_data= dplyr::filter(model$Summary_PopDyn, Stock_ID==Stock_ID_tbl) %>%
+    mutate(Weight = Stock_biomass/(Stock_number*scale_num_to_mass),
+           M = M,
+           U = Catch_biomass/Stock_biomass)
+  invisible(assess_data)
+}
