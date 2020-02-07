@@ -18,9 +18,11 @@
 NULL
 
 #' future simulation for Surume-Ika
+#' @inheritParams simulate_rec_resid
 #' @param assess_data assessment data
 #' @param Fcurrent current fishing mortality coefficient
 #' @param use_Catch_est whether replacing \code{Catch_biomass} by \code{Catch_est} in \code{assess_data}
+#' @param sim_rec_resid matrix of sim_year x nsim, DON'T forget to accont for bias-corrected mean
 #' @encoding UTF-8
 #' @export
 future_sim = function(
@@ -32,7 +34,7 @@ future_sim = function(
   Fcurrent_year=NULL,
   # pre_catch=NULL,
   SR="HS", # or "BH" or "RI"
-  rec_arg=list(a=NULL,b=NULL,sd=0,rho=0,resid=NULL),
+  rec_arg=list(a=NULL,b=NULL,sd=0,rho=0,resampled_resid=NULL,resid_for_bias_correction=NULL),
   bias_correct=TRUE,
   weight,
   num_to_mass_scale=1/1000,
@@ -45,7 +47,8 @@ future_sim = function(
   array_to_tibble = FALSE,
   sim_rec_resid = NULL, # matrix of sim_year X nsim
   scenario_name = NULL,
-  use_Catch_est = FALSE
+  use_Catch_est = FALSE,
+  rec_resid_resample = FALSE
 ) {
 
   argname = ls()
@@ -59,13 +62,13 @@ future_sim = function(
   }
 
   # SR function
-  if (SR == "HS") SRF = function(x,a=rec_arg$a,b=rec_arg$b) ifelse(x>b,b*a,x*a)
-  if (SR == "BH") SRF = function(x,a=rec_arg$a,b=rec_arg$b) a*x/(1+b*x)
-  if (SR == "RI") SRF = function(x,a=rec_arg$a,b=rec_arg$b) a*x*exp(-b*x)
+  if (SR == "HS") SRFF = function(x,a=rec_arg$a,b=rec_arg$b) ifelse(x>b,b*a,x*a)
+  if (SR == "BH") SRFF = function(x,a=rec_arg$a,b=rec_arg$b) a*x/(1+b*x)
+  if (SR == "RI") SRFF = function(x,a=rec_arg$a,b=rec_arg$b) a*x*exp(-b*x)
 
   rec_pred_by_SR <- rec_deviance_to_SR <- NA
   for (i in 2:nrow(assess_data)) {
-    rec_pred_by_SR <- c(rec_pred_by_SR,SRF(assess_data$Spawning_number[i-1]))
+    rec_pred_by_SR <- c(rec_pred_by_SR,SRFF(assess_data$Spawning_number[i-1]))
     rec_deviance_to_SR <- c(rec_deviance_to_SR,log(assess_data$Stock_number[i]/rec_pred_by_SR[i]))
   }
 
@@ -115,19 +118,42 @@ future_sim = function(
   sim_array[,"Year",] = (max(assess_data$Year)+1):(max(assess_data$Year)+sim_year)
   sim_array[,"Weight",] = weight
   sim_array[,"M",] = M
-  sigma = sqrt(rec_arg$sd^2/(1-rec_arg$rho^2)) #recruitment variance including autocorrelation
-  bias_corrected_mean = ifelse(bias_correct, -0.5*sigma^2,0)
+  if (is.null(rec_arg$rho)) {
+    sigma = sd
+  } else {
+    sigma = sqrt(rec_arg$sd^2/(1-rec_arg$rho^2)) #recruitment variance including autocorrelation
+  }
 
   if (is.null(sim_rec_resid)) {
-    set.seed(seed)
-    sim_array[,"rec_resid_excl_AR",] <- rnorm(prod(dim(sim_array[,"rec_resid_excl_AR",])),bias_corrected_mean,rec_arg$sd)
+    # set.seed(seed)
+    if (rec_resid_resample) {
+      if (is.null(rec_arg$resampled_resid)) {
+        warning("Please include residuals in 'rec_arg$resampled_resid'")
+      }
+      sim_array[,"rec_resid_excl_AR",] <- simulate_rec_resid(sd=NULL,rho=rec_arg$rho,resample = TRUE,resampled_resid=rec_arg$resampled_resid,
+                                                             bias_correct=bias_correct,resid_for_bias_correction=rec_arg$resid_for_bias_correction,
+                                                             year=sim_year,nsim=nsim,seed=seed)
+    } else {
+      sim_array[,"rec_resid_excl_AR",] <- simulate_rec_resid(sd=rec_arg$sd,rho=rec_arg$rho,resample = FALSE,resampled_resid=NULL,
+                                                             bias_correct=bias_correct,resid_for_bias_correction=NULL,
+                                                             year=sim_year,nsim=nsim,seed=seed)
+    }
   } else {
     sim_array[,"rec_resid_excl_AR",] <- sim_rec_resid
+  }
+  if (rec_resid_resample) {
+    if (is.null(rec_arg$resid_for_bias_correction) && bias_correct) {
+      warning("Residuals for bias correction are assumed to be identical to resampled residuals")
+      rec_arg$resid_for_bias_correction = resampled_resid
+    }
+    bias_corrected_mean = ifelse(bias_correct, -log(mean(exp(rec_arg$resid_for_bias_correction))),0)
+  } else {
+    bias_corrected_mean = ifelse(bias_correct, -0.5*sigma^2,0)
   }
 
   for (y in 1:sim_year) {
     if (y == 1) {
-      sim_array[y,"rec_pred_by_SR",] = SRF(unlist(dplyr::select(dplyr::filter(all_data,Year==max(Year)),Spawning_number)))
+      sim_array[y,"rec_pred_by_SR",] = SRFF(unlist(dplyr::select(dplyr::filter(all_data,Year==max(Year)),Spawning_number)))
       # sim_array[y,"rec_deviance_to_SR",] = sim_array[y,"rec_resid_excl_AR",] + rec_arg$rho*unlist(dplyr::select(dplyr::filter(all_data,Year==max(Year)),rec_deviance_to_SR))
       sim_array[y,"rec_pred_incl_AR",] = sim_array[y,"rec_pred_by_SR",]*exp(rec_arg$rho*unlist(dplyr::select(dplyr::filter(all_data,Year==max(Year)),rec_deviance_to_SR)))
       sim_array[y,"Stock_number",] = sim_array[y,"rec_pred_incl_AR",]*exp(sim_array[y,"rec_resid_excl_AR",])
@@ -137,7 +163,7 @@ future_sim = function(
       sim_array[y,"Spawning_number",] = sim_array[y,"Stock_number",]*exp(-sim_array[y,"F",]-sim_array[y,"M",])
       sim_array[y,"Catch_number",] = Catch_func(sim_array[y,"Stock_number",],sim_array[y,"F",],sim_array[y,"M",])
     } else {
-      sim_array[y,"rec_pred_by_SR",] = SRF(unlist(sim_array[y-1,"Spawning_number",]))
+      sim_array[y,"rec_pred_by_SR",] = SRFF(unlist(sim_array[y-1,"Spawning_number",]))
       # sim_array[y,"rec_deviance_to_SR",] = sim_array[y,"rec_resid_excl_AR",] + rec_arg$rho*(sim_array[y-1,"rec_deviance_to_SR",])
       sim_array[y,"rec_pred_incl_AR",] = sim_array[y,"rec_pred_by_SR",]*exp(rec_arg$rho*sim_array[y-1,"rec_deviance_to_SR",])
       sim_array[y,"Stock_number",] = sim_array[y,"rec_pred_incl_AR",]*exp(sim_array[y,"rec_resid_excl_AR",])
@@ -191,6 +217,32 @@ future_sim = function(
     Res$sim_tibble = sim_tibble
   }
   return(Res)
+}
+
+
+#' Function for simulating recruitment residuals with consideration for bias correction (if neccessary)
+#' @encoding UTF-8
+#' @export
+simulate_rec_resid = function(sd,rho=0,resample = FALSE,resampled_resid=NULL,bias_correct=TRUE,resid_for_bias_correction=NULL,year=NULL,nsim=NULL,seed=1,out="resid") {
+  set.seed(seed)
+  if (resample) {
+    if (rho !=0 ) {
+      warning("'rho' cannot be considered when using resample=TRUE and is automatically set at zero")
+    }
+    if (is.null(resid_for_bias_correction) && bias_correct) {
+      warning("Residuals for bias correction are assumed to be identical to resampled residuals")
+      resid_for_bias_correction = resampled_resid
+    }
+    bias_corrected_mean = ifelse(bias_correct, -log(mean(exp(resid_for_bias_correction))),0)
+    sim_rec_resid = sample(resampled_resid, size=year*nsim, replace=TRUE) + bias_corrected_mean
+  } else {
+    sigma = sqrt(sd^2/(1-rho^2)) #recruitment variance including autocorrelation
+    bias_corrected_mean = ifelse(bias_correct, -0.5*sigma^2,0)
+    sim_rec_resid = rnorm(year*nsim,bias_corrected_mean,sd)
+  }
+  if (out=="resid") output = sim_rec_resid
+  if (out=="bias_corrected_mean") output = bias_corrected_mean
+  return(invisible(output))
 }
 
 

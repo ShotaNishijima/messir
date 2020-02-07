@@ -122,7 +122,7 @@ samuika = function(
       stop("'length(regime_key) < length(regime_year)+1' should be satisfied")
     }
     if (regime_key[1]!=0) {
-      stop("'regime_key' must start with zero")
+      stop("'regime_key' must start at zero")
     }
     regime_iy = regime_year-start_year+1
     if ("a" %in% regime_par) {
