@@ -63,7 +63,7 @@ samuika = function(
   Pope = FALSE,
   scale_num_to_mass = 0.1,
   bias_correct = TRUE,
-  bias_correct_control = list(sd=bias_correct),
+  bias_correct_control = list(sd=FALSE),
   fixed_par = c("a","b","sd","rec_rho","SDlogF","rho_SDlogF","SDlogC","q","SDlogCPUE")[6],
   map_add = NULL,
   logF_diff = 0, #
@@ -450,7 +450,7 @@ samuika = function(
     # rec_resid = matrix(VALUE[names(VALUE)=="rec_resid"],nrow=NStock)
     # rec_resid[rec_resid==0] <- NA
 
-    Ncol = ifelse(bias_correct,4,2)
+    Ncol = ifelse(bias_correct_control$sd,4,2)
     N_se = matrix(rep_summary[rownames(rep_summary)=="N",Ncol],nrow=NStock)
     SSN_se = matrix(rep_summary[rownames(rep_summary)=="SSN",Ncol],nrow=NStock)
     F_se = matrix(rep_summary[rownames(rep_summary)=="F",Ncol],nrow=NStock)
