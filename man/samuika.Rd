@@ -11,7 +11,7 @@ samuika(
   index_data,
   SR = "BH",
   regime_year = NULL,
-  regime_par = c("a", "b", "sd")[c(1:2)],
+  regime_par = c("a", "b", "sd")[c(1, 2, 3)],
   regime_key = 0:length(regime_year),
   stock_shared_par = c("a", "b", "sd", "SDlogF", "SDlogC")[c(1:5)],
   SDlogCPUE_key = rep(0, length(unique(index_data$Index_ID))),

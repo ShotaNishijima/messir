@@ -37,7 +37,7 @@ samuika = function(
   index_data,
   SR = "BH",
   regime_year = NULL,
-  regime_par = c("a","b","sd")[c(1:2)],
+  regime_par = c("a","b","sd")[c(1,2,3)],
   regime_key = 0:length(regime_year),
   stock_shared_par = c("a","b","sd","SDlogF","SDlogC")[c(1:5)],
   SDlogCPUE_key = rep(0,length(unique(index_data$Index_ID))),
@@ -123,6 +123,9 @@ samuika = function(
     }
     if (regime_key[1]!=0) {
       stop("'regime_key' must start at zero")
+    }
+    if (max(regime_key) >= length(regime_key)) {
+      stop("'max(regime_key)' must be smaller than 'length(regime_key)'")
     }
     regime_iy = regime_year-start_year+1
     if ("a" %in% regime_par) {
@@ -552,6 +555,15 @@ samuika = function(
       mutate(Catch_resid = log(Catch_biomass/Catch_est)) %>%
       arrange(Stock_ID, Year)
 
+    regime_id = rep(regime_key[1],nrow(Summary_PopDyn))
+    if (length(regime_year) >1) {
+      for (ii in 1:(length(regime_year))) {
+        regime_id[Summary_PopDyn$Year>=regime_year[ii]] <- regime_key[ii+1]
+      }
+    }
+    Summary_PopDyn = Summary_PopDyn %>%
+      mutate(Regime = regime_id)
+
     RES$Summary_PopDyn = Summary_PopDyn
     Summary_index = full_join(index_data %>% as_tibble(),
                               select(mutate(Index_key %>% as_tibble(), Year = iy+start_year),-iy),
@@ -565,6 +577,7 @@ samuika = function(
 
     RES$Summary_index = Summary_index
   }
+  class(RES) <- "samuika"
 
   invisible(RES)
 }
@@ -629,7 +642,7 @@ retro_samuika = function(samuika_res, n=5, first_remove_catch_year = NULL, first
 #' @import dplyr
 #' @importFrom dplyr tibble
 #' @param retro_res retro_samuika object
-#' @param first_eval_year firstly-evaluated year
+#' @param first_eval_year first year to be evaluated
 #' @param lag_year time-lag in evaluation of Mohn's rho
 #' @encoding UTF-8
 #' @export
@@ -658,4 +671,17 @@ get_mohn = function(retro_res, first_eval_year = NULL, lag_year = 1) {
   RES = list(Summary=Summary,N_res=N_res,B_res=B_res,SSN_res=SSN_res,
              SSB_res=SSB_res,F_res=F_res,C_res=C_res)
 
+}
+
+#' Function for deriving stock-recruitment parameters
+#' @import dplyr
+#' @importFrom dplyr tibble
+#' @param model samuika object
+#' @encoding UTF-8
+#' @export
+get_rec_pars = function(model,M=model$input$M) {
+  rec_par_set = model$Summary_PopDyn %>%
+    dplyr::select(Stock_ID, rec_a, rec_b, rec_sd) %>% unique() %>%
+    mutate(SR=model$input$SR,M=M,Pope=model$input$Pope)
+  rec_par_set
 }

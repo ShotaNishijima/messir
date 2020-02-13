@@ -93,6 +93,7 @@ SRF = function(a,b,x,SR="HS") {
 }
 
 #' Function to get stock-recruit data from samuika object
+#' @import dplyr
 #' @param model samuika object
 #' @encoding UTF-8
 #' @export
@@ -108,7 +109,16 @@ get_SRdata = function(model) {
     filter(Year < max(Year)) %>%
     mutate(Year = Year +1)
 
-  full_join(REC, SSN)
+  SRdata = full_join(REC, SSN) %>%
+    dplyr::mutate(Stock_ID2 = as.numeric(Stock_ID)) %>%
+    dplyr::select(-Stock_ID) %>%
+    dplyr::rename(Stock_ID = Stock_ID2) %>%
+    dplyr::select(Stock_ID, everything())
+
+  SRdata2 = left_join(SRdata,
+    select(model$Summary_PopDyn,Stock_ID,Year,Regime))
+
+  SRdata2
 }
 
 
@@ -298,6 +308,7 @@ plot_retro_samuika=function(samuika_retro,
 #' @import dplyr
 #' @importFrom  dplyr select
 #' @importFrom  dplyr filter
+#' @inheritParams get_SRdata
 #' @param list_samuika_res list of samuika objects
 #' @param model_name model names used in legend
 #' @encoding UTF-8
@@ -313,7 +324,9 @@ plot_SR_samuika = function(list_samuika_res,
                            path_size=1.2,
                            legend_position = "right",
                            legend_text_size = 1.2,
-                           legend_key_size = 1) {
+                           legend_key_size = 1,
+                           palette_name = "Set1",
+                           point_size = 2) {
   message(paste0("plotting Stock_ID=",Stock_ID," OK?"))
   NRES = length(list_samuika_res)
   name_list = NULL
@@ -350,13 +363,13 @@ plot_SR_samuika = function(list_samuika_res,
   for (i in 1:NRES) {
     res = list_samuika_res[[i]]
     if (length(res$input$regime_key)!= 1 && !is.null(res$input$regime_year)) {
-      warning("This function does not deal with regimes; only the first regime SR curve is plotted")
+      warning("Use 'plot_SR_regime()' to plot different regimes; only the first regime SR curve is plotted")
     }
     Stock_ID_dbl = Stock_ID
     a = res$Summary_PopDyn %>% filter(Stock_ID==Stock_ID_dbl) %>% select(rec_a) %>% unique()
-    a = as.numeric(a[1])
+    a = a[[1]][1]
     b = res$Summary_PopDyn %>% filter(Stock_ID==Stock_ID_dbl) %>% select(rec_b) %>% unique()
-    b = as.numeric(b[1])
+    b = b[[1]][1]
 
     R_pred = SRF(a=a,b=b,x=SSN,SR=res$input$SR)
     if (i==1) {
@@ -375,10 +388,12 @@ plot_SR_samuika = function(list_samuika_res,
   g1 = ggplot(data=NULL,aes(x=Spawning_number,y=Stock_number))+
     geom_path(data = SRdata_pred, aes(group=model,colour=model),size=path_size)
   if (plot_point) {
-    g1 = g1 + geom_point(data = SRdata_est, aes(group=model,colour=model))
+    g1 = g1 + geom_point(data = SRdata_est, aes(group=model,colour=model),
+                         size=point_size)
   }
   g1 = g1 + coord_cartesian(xlim=c(0,xmax),ylim=c(0,ymax),expand=0) +
     theme_bw(base_size=18)+
+    scale_colour_brewer(palette=palette_name)+
     theme(legend.position=legend_position,legend.key.size=unit(legend_key_size, "cm"),
           legend.title=element_blank(),legend.text=element_text(size=rel(legend_text_size)))
 
@@ -399,8 +414,152 @@ plot_SR_samuika = function(list_samuika_res,
                  linetype="dotted",size=1.2)
   }
   g1
+}
+
+
+#' plotting stock-recruitment curve with regimes from a samuika object
+#' @import ggplot2
+#' @import dplyr
+#' @importFrom  dplyr select
+#' @importFrom  dplyr filter
+#' @inheritParams get_SRdata
+#' @param list_samuika_res list of samuika objects
+#' @param model_name model names used in legend
+#' @param regime_name regime names used in legend
+#' @encoding UTF-8
+#' @export
+plot_SR_regime = function(list_samuika_res,
+                           model_name = NULL,
+                           Stock_ID=0,
+                           regime_name=NULL,
+                           plot_point = TRUE,
+                           draw_replace = TRUE,
+                           Smsy = NULL,
+                           xmax_ratio = 1.3,
+                           ymax_ratio = 1.1,
+                           path_size=1.2,
+                           legend_position = "right",
+                           legend_text_size = 1.2,
+                           legend_key_size = 1,
+                          legend_off = TRUE,
+                          palette_name = "Set1",
+                          point_size=2) {
+  message(paste0("plotting Stock_ID=",Stock_ID," OK?"))
+  if (class(list_samuika_res) == "samuika") {
+    list_samuika_res <- list(list_samuika_res)
+  }
+  NRES = length(list_samuika_res)
+  name_list = NULL
+
+  for (i in 1:NRES) {
+    res = list_samuika_res[[i]]
+    if (!is.null(model_name)) {
+      name = model_name[i]
+    } else {
+      name = names(list_samuika_res)[i]
+    }
+    if (is.null(name)) {
+      name = paste0("model",i)
+    }
+    name_list = c(name_list,name)
+
+    if (i==1) {
+      SRdata_est = get_SRdata(res) %>%
+        mutate(model0 = name)
+    } else {
+      SRdata_est = full_join(SRdata_est,get_SRdata(res) %>%
+                               mutate(model0 = name))
+    }
+  }
+  Stock_ID_dbl = Stock_ID
+  SRdata_est = SRdata_est %>%
+    mutate(model = factor(model0, level = name_list)) %>%
+    filter(Stock_ID == Stock_ID_dbl)
+
+  xmax = max(SRdata_est$Spawning_number)*xmax_ratio
+  ymax = max(SRdata_est$Stock_number)*ymax_ratio
+  SSN = seq(0,xmax,length=1000)
+
+  for (i in 1:NRES) {
+    res = list_samuika_res[[i]]
+    Stock_ID_dbl = Stock_ID
+    if (is.null(regime_name)) {
+      regime_name2 = res$input$regime_key %>% as.character() %>% unique()
+    } else {
+      if (class(regime_name) == "list") {
+        if (length(regime_name) != NRES) {
+          stop("'length(regime_name)' must satisfy the number of models")
+          regime_name2 = regime_name[[i]]
+        }
+      } else {
+        regime_name2 = regime_name
+      }
+    }
+
+    ab = res$Summary_PopDyn %>% dplyr::filter(Stock_ID==Stock_ID_dbl) %>%
+      dplyr::select(rec_a,rec_b,rec_sd) %>% distinct()
+    ab = ab %>%
+      dplyr::mutate(regime = regime_name2)
+
+    for (j in 1:nrow(ab)) {
+      R_pred = SRF(a=as.numeric(ab$rec_a[j]),b=as.numeric(ab$rec_b[j]),x=SSN,SR=res$input$SR)
+      if (i==1 && j==1) {
+        SRdata_pred = tibble(Stock_number=R_pred,Spawning_number=SSN) %>%
+          mutate(model0 = name_list[i],regime=regime_name2[j])
+      } else {
+        SRdata_pred = full_join(SRdata_pred,tibble(Stock_number=R_pred,Spawning_number=SSN) %>%
+                                  mutate(model0 = name_list[i],regime=regime_name2[j]))
+      }
+    }
+  }
+  unique_chr= SRdata_pred$regime %>% unique()
+  # unique_dbl= SRdata_est$Regime %>% unique()
+  SRdata_est = SRdata_est %>%
+    mutate(regime = unique_chr[Regime+1])
+
+  Stock_ID_dbl = Stock_ID
+  SRdata_pred = SRdata_pred %>%
+    mutate(model = factor(model0, level = name_list)) %>%
+    filter(Stock_ID == Stock_ID_dbl)
+
+  g1 = ggplot(data=NULL,aes(x=Spawning_number,y=Stock_number))+
+    geom_path(data = SRdata_pred,
+              aes(group=interaction(model,regime),colour=regime,linetype=model),
+              size=path_size)
+  if (plot_point) {
+    g1 = g1 + geom_point(data = SRdata_est,
+                         aes(group=interaction(model,regime),colour=regime,shape=model),
+                         size=point_size)
+  }
+  g1 = g1 + coord_cartesian(xlim=c(0,xmax),ylim=c(0,ymax),expand=0) +
+    theme_bw(base_size=18)+
+    scale_colour_brewer(palette=palette_name)+
+    theme(legend.position=legend_position,legend.key.size=unit(legend_key_size, "cm"),
+          legend.title=element_blank(),legend.text=element_text(size=rel(legend_text_size)))
+  if (legend_off) {
+    g1 = g1 + theme(legend.position="none")
+  }
+
+  if (draw_replace) {
+    g1 = g1 +
+      geom_abline(intercept=0,slope = exp(list_samuika_res[[1]]$input$M[1]),colour="gray",size=1,linetype="dashed")
+  }
+
+  if (!is.null(Smsy)) {
+    if (length(Smsy) != length(list_samuika_res)) {
+      stop("The length of SBmsy does not macth with that of list_samuika_res")
+    }
+    SBmsy_tbl = tibble(Spawning_number = Smsy, model0 = name_list) %>%
+      mutate(model = factor(model0, level = name_list))
+    g1 = g1+
+      geom_vline(data = SBmsy_tbl, aes(xintercept = Spawning_number, group=model, colour=model),
+                 linetype="dotted",size=1.2)
+  }
+  g1
 
 }
+
+
 
 
 #' Function for plotting future_res
@@ -553,7 +712,7 @@ get_prob_ref = function(future_sim_res, ref_value, variable="Spawning_biomass") 
 #' @encoding UTF-8
 #' @export
 convert_samuika_estMSY = function(samuika_res, Stock_ID = 0, scale_num_to_mass = NULL) {
-  message(paste0("plotting Stock_ID=",Stock_ID," OK?"))
+  message(paste0("Using Stock_ID=",Stock_ID," OK?"))
   model = samuika_res
   M = samuika_res$input$M
   if (is.null(scale_num_to_mass)) scale_num_to_mass = model$input$scale_num_to_mass
