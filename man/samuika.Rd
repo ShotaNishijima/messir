@@ -35,7 +35,7 @@ samuika(
   Pope = FALSE,
   scale_num_to_mass = 0.1,
   bias_correct = TRUE,
-  bias_correct_control = list(sd = bias_correct),
+  bias_correct_control = list(sd = FALSE),
   fixed_par = c("a", "b", "sd", "rec_rho", "SDlogF", "rho_SDlogF", "SDlogC", "q",
     "SDlogCPUE")[6],
   map_add = NULL,
