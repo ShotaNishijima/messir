@@ -685,3 +685,73 @@ get_rec_pars = function(model,M=model$input$M) {
     mutate(SR=model$input$SR,M=M,Pope=model$input$Pope)
   rec_par_set
 }
+
+
+#' Calculating deterministic biological reference points
+#' @param rec_pars \code{get_rec_pars} object
+#' @encoding UTF-8
+#' @export
+det_BRF = function(rec_pars) {
+  # if (is.null(weight)) {
+  #   message("Weight is assumed to be 1 for calculating MSY")
+  weight = 1
+  # }
+  rec_pars = mutate(rec_pars,weight=weight)
+  N0_vec <- S0_vec<- h_vec <- Smsy_vec <- Nmsy_vec <- Fmsy_vec <- MSY_vec <- NULL
+  for (i in 1:nrow(rec_pars)) {
+    a = as.numeric(rec_pars$rec_a[i])
+    b = as.numeric(rec_pars$rec_b[i])
+    SR = as.character(rec_pars$SR[i])
+    M = as.numeric(rec_pars$M[i])
+    w = as.numeric(rec_pars$weight[i])
+    Pope = as.numeric(rec_pars$Pope[i])
+    if (a < exp(M)) {
+      stop("Deterministic BRFs can not be calculated when 'a < exp(M)'")
+    }
+    if (SR == "HS") {
+      S0 = a*b/exp(M); N0 = exp(M)*S0;
+      h = 1-b/S0; Smsy = b; Nmsy = a*b;
+    }
+    if (SR == "BH") {
+      S0 = (a-exp(M))/(b*exp(M)); N0 = exp(M)*S0;
+      h = a*0.2*S0/((1+b*0.2*S0)*N0)
+      Smsy = (sqrt(a/exp(M))-1)/b; Nmsy = a*Smsy/(1+b*Smsy)
+    }
+    if (SR == "RI") {
+      S0 = (log(a)-M)/b; N0 = exp(M)*S0;
+      h = a*0.2*S0*exp(-b*0.2*S0)/N0
+      op = optimize(function(x) {(exp(M)*x-a*x*exp(-b*x))}, interval=c(0,S0))
+      Smsy = op$minimum; Nmsy = a*Smsy*exp(-b*Smsy)
+    }
+    Fmsy = log(Nmsy)-log(Smsy)-M
+    MSY = ifelse(Pope,exp(-0.5*M)*Nmsy*(1-exp(-Fmsy))*w,w*(Fmsy/(Fmsy+M))*Nmsy*(1-exp(-Fmsy-M)))
+    N0_vec <- c(N0_vec,N0);
+    S0_vec <- c(S0_vec,S0);
+    h_vec <- c(h_vec,h);
+    Smsy_vec <- c(Smsy_vec,Smsy);
+    Nmsy_vec <- c(Nmsy_vec,Nmsy);
+    Fmsy_vec <- c(Fmsy_vec,Fmsy);
+    MSY_vec <- c(MSY_vec,MSY);
+  }
+  res = rec_pars %>%
+    dplyr::select(-weight) %>%
+    dplyr::mutate(S0=S0_vec,N0=N0_vec,h=h_vec,Smsy=Smsy_vec,Nmsy=Nmsy_vec,Fmsy=Fmsy_vec,MSY_in_number=MSY_vec)
+  return(res)
+}
+
+#' Output summary table with deterministic biological reference points
+#' @inheritParams get_rec_pars
+#' @inheritParams det_BRF
+#' @param model \code{samuika} object
+#' @encoding UTF-8
+#' @export
+integrate_detBRF = function(model, M = model$input$M) {
+  rec_pars = get_rec_pars(model,M=M)
+  rec_pars_detBRF = det_BRF(rec_pars)
+  Summary_PopDyn = model$Summary_PopDyn %>% left_join(rec_pars_detBRF)
+  Summary_PopDyn = Summary_PopDyn %>%
+    left_join(model$input$weight_data %>% gather(key = Stock_ID,value=Weight,-Year) %>%
+                mutate(Stock_ID = as.numeric(Stock_ID))) %>%
+    mutate(MSY = MSY_in_number*Weight*model$input$scale_num_to_mass)
+  Summary_PopDyn
+}

@@ -62,6 +62,44 @@ out_summary_estimate <- function(model,CI=0.8) {
   return(Summary_PopDyn)
 }
 
+
+#' output a table of samuika results (Stock number and Spawning_number)
+#' @param model \code{samuika} object
+#' @encoding UTF-8
+#' @export
+out_summary_estimate_n <- function(model,CI=0.8) {
+  samuika_model = model
+  Summary_PopDyn = samuika_model$Summary_PopDyn %>%
+    dplyr::select(Stock_ID, Year, Stock_number, Spawning_number) %>%
+    gather(key=category, value=value, -Stock_ID, -Year) %>%
+    mutate(category_f = factor(category,level=c("Stock_number","Spawning_number")))
+
+  N_se = t(samuika_model$N_se) %>% as_tibble() %>%
+    mutate(Year=as.numeric(colnames(samuika_model$N_se))) %>%
+    gather(key=Stock_ID, value=SE, -Year) %>%
+    mutate(Stock_ID=as.numeric(Stock_ID),
+           category="Stock_number",category_f=factor("Stock_number"))
+
+  SSN_se = t(samuika_model$SSN_se) %>% as_tibble() %>%
+    mutate(Year=as.numeric(colnames(samuika_model$SSN_se))) %>%
+    gather(key=Stock_ID, value=SE, -Year) %>%
+    mutate(Stock_ID=as.numeric(Stock_ID),
+           category="Spawning_number",category_f=factor("Spawning_number"))
+
+  SE_data = bind_rows(N_se, SSN_se)
+
+  Summary_PopDyn = left_join(Summary_PopDyn,SE_data, by=c("Stock_ID","Year","category","category_f"))
+
+  Summary_PopDyn = Summary_PopDyn %>%
+    mutate(CV = SE/value) %>%
+    mutate(Cz = exp(qnorm(CI+(1-CI)/2)*sqrt(log(1+CV^2)))) %>%
+    mutate(lower = value/Cz, upper = value*Cz) %>%
+    mutate(type = "Estimate")
+
+  return(Summary_PopDyn)
+}
+
+
 #' Making a combined list with original list name(s)
 #' @param ... list of \code{class("list")}
 #' @encoding UTF-8
@@ -420,6 +458,7 @@ plot_SR_samuika = function(list_samuika_res,
 #' plotting stock-recruitment curve with regimes from a samuika object
 #' @import ggplot2
 #' @import dplyr
+#' @import ggrepel
 #' @importFrom  dplyr select
 #' @importFrom  dplyr filter
 #' @inheritParams get_SRdata
@@ -443,7 +482,10 @@ plot_SR_regime = function(list_samuika_res,
                            legend_key_size = 1,
                           legend_off = TRUE,
                           palette_name = "Set1",
-                          point_size=2) {
+                          point_size=2,
+                          connect_point = TRUE,
+                          connect_point_size=1,
+                          label_year=NULL) {
   message(paste0("plotting Stock_ID=",Stock_ID," OK?"))
   if (class(list_samuika_res) == "samuika") {
     list_samuika_res <- list(list_samuika_res)
@@ -522,6 +564,13 @@ plot_SR_regime = function(list_samuika_res,
     mutate(model = factor(model0, level = name_list)) %>%
     filter(Stock_ID == Stock_ID_dbl)
 
+  if (is.null(label_year)) {
+    label_year = c(SRdata_est$Year[SRdata_est$Year %% 5 == 0],range(SRdata_est$Year)) %>%
+      unique() %>% sort()
+    }
+  SRdata_est = SRdata_est %>%
+    mutate(label = ifelse(Year %in% label_year, Year, NA))
+
   g1 = ggplot(data=NULL,aes(x=Spawning_number,y=Stock_number))+
     geom_path(data = SRdata_pred,
               aes(group=interaction(model,regime),colour=regime,linetype=model),
@@ -529,7 +578,12 @@ plot_SR_regime = function(list_samuika_res,
   if (plot_point) {
     g1 = g1 + geom_point(data = SRdata_est,
                          aes(group=interaction(model,regime),colour=regime,shape=model),
-                         size=point_size)
+                         size=point_size)+
+      scale_shape_discrete(solid=T)
+    if (connect_point) {
+      g1 = g1 + geom_path(data = SRdata_est,aes(group=model),colour="darkgray",size=connect_point_size)+
+        ggrepel::geom_label_repel(data = SRdata_est,aes(label=label))
+    }
   }
   g1 = g1 + coord_cartesian(xlim=c(0,xmax),ylim=c(0,ymax),expand=0) +
     theme_bw(base_size=18)+
@@ -588,7 +642,8 @@ visualize_future = function(
   strip_text_size = 10,
   base_size = 16,
   BRP_line_size = 1,
-  palette_name = "Set1"
+  palette_name = "Set1",
+  alpha = 0.4
 ) {
 
   if (is.null(scenario_name)) {
@@ -649,7 +704,6 @@ visualize_future = function(
     mutate(Scenario = factor(Scenario0, levels=scenario_name)) %>%
     select(-Scenario0)
 
-  alpha = 0.4
   g1 = ggplot(plot_data_center)
 
   if (!is.null(BRP)) {
@@ -722,4 +776,293 @@ convert_samuika_estMSY = function(samuika_res, Stock_ID = 0, scale_num_to_mass =
            M = M,
            U = Catch_biomass/Stock_biomass)
   invisible(assess_data)
+}
+
+#' Function for plotting time series of catch biomass
+#' @import ggplot
+#' @inheritParams out_summary_estimate
+#' @param model \code{samuika} object
+#' @encoding UTF-8
+#' @export
+plot_catch = function(model,CI=0.8,plot_CI=TRUE,Stock_name=NULL,plot_obs=TRUE,
+                      base_size=18,path_size=1.5,colour="blue",point_size=2,
+                      alpha=0.4,scales="fix",add_MSY=TRUE,
+                      MSY_path_size=1,MSY_path_colour = "orange",MSY_path_linetype = "dashed"){
+  data_est = out_summary_estimate(model,CI=CI) %>%
+    filter(category == "Catch")
+  if (is.null(Stock_name)) {
+    data_est = data_est %>% mutate(Stock_name = as.character(Stock_ID))
+  } else {
+    data_est$Stock_name = Stock_name[data_est$Stock_ID+1]
+  }
+  gg = ggplot(data=data_est,aes(x=Year))
+  if (plot_CI) {
+    gg = gg + geom_ribbon(aes(ymin=lower,ymax=upper),alpha=alpha,fill=colour)
+  }
+  ymax = data_est$upper %>% max
+  ymax = ymax*1.05
+  xmin = data_est$Year %>% min -1
+  xmax = data_est$Year %>% max + 1
+  gg = gg +
+    geom_path(aes(y=value),size=path_size,colour=colour)+
+    # scale_colour_brewer(palette=palette_name)+
+    theme_bw(base_size=base_size)+ylab("Catch")+
+    ylim(0,NA)+xlim(xmin,xmax)+
+    facet_wrap(vars(Stock_name),scales=scales)
+  if (plot_obs) {
+    data_obs = dplyr::select(model$Summary_PopDyn,Stock_ID,Year,Catch_biomass) %>% na.omit() %>%
+      rename(value = Catch_biomass)
+    if (is.null(Stock_name)) {
+      data_obs = data_obs %>% mutate(Stock_name = as.character(Stock_ID))
+    } else {
+      data_obs$Stock_name = Stock_name[data_obs$Stock_ID+1]
+    }
+    gg = gg + geom_point(data = data_obs,aes(y=value),size=point_size)
+  }
+  if (add_MSY) {
+    Summary_PopDyn = integrate_detBRF(model) %>%
+      dplyr::rename(value = MSY) %>%
+      dplyr::full_join(data_est %>% dplyr::select(Stock_ID,Year,Stock_name))
+    gg = gg + geom_path(data=Summary_PopDyn,aes(x=Year,y=value),
+                        size=MSY_path_size,colour=MSY_path_colour,linetype=MSY_path_linetype)
+  }
+  gg
+}
+
+#' Function for plotting time-series of stock biomass
+#' @import ggplot
+#' @inheritParams out_summary_estimate
+#' @param model \code{samuika} object
+#' @encoding UTF-8
+#' @export
+plot_stock_biomass = function(model,CI=0.8,plot_CI=TRUE,Stock_name=NULL,
+                      base_size=18,path_size=1.5,colour="blue",point_size=2,
+                      alpha=0.4,scales="fix",add_MSY = FALSE,
+                      MSY_path_size=1,MSY_path_colour = "orange",MSY_path_linetype = "dashed"){
+  data_est = out_summary_estimate(model,CI=CI) %>%
+    filter(category == "Stock_biomass")
+  if (is.null(Stock_name)) {
+    data_est = data_est %>% mutate(Stock_name = as.character(Stock_ID))
+  } else {
+    data_est$Stock_name = Stock_name[data_est$Stock_ID+1]
+  }
+  gg = ggplot(data=data_est,aes(x=Year))
+  if (plot_CI) {
+    gg = gg + geom_ribbon(aes(ymin=lower,ymax=upper),alpha=alpha,fill=colour)
+  }
+  ymax = data_est$upper %>% max
+  ymax = ymax*1.05
+  xmin = data_est$Year %>% min -1
+  xmax = data_est$Year %>% max + 1
+  gg = gg +
+    geom_path(aes(y=value),size=path_size,colour=colour)+
+    # scale_colour_brewer(palette=palette_name)+
+    theme_bw(base_size=base_size)+ylab("Stock biomass")+
+    ylim(0,NA)+xlim(xmin,xmax)+
+    facet_wrap(vars(Stock_name),scales=scales)
+  if (add_MSY) {
+    Summary_PopDyn = integrate_detBRF(model) %>%
+      dplyr::mutate(value = Nmsy*Weight*model$input$scale_num_to_mass) %>%
+      dplyr::full_join(data_est %>% dplyr::select(Stock_ID,Year,Stock_name))
+    gg = gg + geom_path(data=Summary_PopDyn,aes(x=Year,y=value),
+                        size=MSY_path_size,colour=MSY_path_colour,linetype=MSY_path_linetype)
+  }
+  gg
+}
+
+#' Function for plotting time-series of stock number
+#' @import ggplot
+#' @inheritParams out_summary_estimate_n
+#' @param model \code{samuika} object
+#' @encoding UTF-8
+#' @export
+plot_stock_number = function(model,CI=0.8,plot_CI=TRUE,Stock_name=NULL,plot_obs=TRUE,
+                              base_size=18,path_size=1.5,colour="blue",point_size=2,
+                              alpha=0.4,scales="fix",add_MSY=FALSE,
+                             MSY_path_size=1,MSY_path_colour = "orange",MSY_path_linetype = "dashed"){
+  data_est = out_summary_estimate_n(model,CI=CI) %>%
+    filter(category == "Stock_number")
+  if (is.null(Stock_name)) {
+    data_est = data_est %>% mutate(Stock_name = as.character(Stock_ID))
+  } else {
+    data_est$Stock_name = Stock_name[data_est$Stock_ID+1]
+  }
+  gg = ggplot(data=data_est,aes(x=Year))
+  if (plot_CI) {
+    gg = gg + geom_ribbon(aes(ymin=lower,ymax=upper),alpha=alpha,fill=colour)
+  }
+  ymax = data_est$upper %>% max
+  ymax = ymax*1.05
+  xmin = data_est$Year %>% min -1
+  xmax = data_est$Year %>% max + 1
+  gg = gg +
+    geom_path(aes(y=value),size=path_size,colour=colour)+
+    # scale_colour_brewer(palette=palette_name)+
+    theme_bw(base_size=base_size)+ylab("Stock number")+
+    ylim(0,NA)+xlim(xmin,xmax)+
+    facet_wrap(vars(Stock_name),scales=scales)
+
+  if (plot_obs) {
+    data_obs = dplyr::select(model$Summary_index,Index_ID,Stock_ID,Year,Index,q) %>% na.omit() %>%
+      mutate(value = Index/q)
+    if (is.null(Stock_name)) {
+      data_obs = data_obs %>% mutate(Stock_name = as.character(Stock_ID))
+    } else {
+      data_obs$Stock_name = Stock_name[data_obs$Stock_ID+1]
+    }
+    gg = gg + geom_point(data = data_obs,aes(y=value),size=point_size)
+  }
+  if (add_MSY) {
+    Summary_PopDyn = integrate_detBRF(model) %>%
+      dplyr::rename(value = Nmsy) %>%
+      dplyr::full_join(data_est %>% dplyr::select(Stock_ID,Year,Stock_name))
+    gg = gg + geom_path(data=Summary_PopDyn,aes(x=Year,y=value),
+                        size=MSY_path_size,colour=MSY_path_colour,linetype=MSY_path_linetype)
+  }
+  gg
+}
+
+#' Function for plotting time-series of spawning number
+#' @import ggplot
+#' @inheritParams out_summary_estimate_n
+#' @param model \code{samuika} object
+#' @encoding UTF-8
+#' @export
+plot_spawning_number = function(model,CI=0.8,plot_CI=TRUE,Stock_name=NULL,
+                             base_size=18,path_size=1.5,colour="blue",point_size=2,
+                             alpha=0.4,scales="fix",add_MSY=FALSE,
+                             MSY_path_size=1,MSY_path_colour = "orange",MSY_path_linetype = "dashed"){
+  data_est = out_summary_estimate_n(model,CI=CI) %>%
+    filter(category == "Spawning_number")
+  if (is.null(Stock_name)) {
+    data_est = data_est %>% mutate(Stock_name = as.character(Stock_ID))
+  } else {
+    data_est$Stock_name = Stock_name[data_est$Stock_ID+1]
+  }
+  gg = ggplot(data=data_est,aes(x=Year))
+  if (plot_CI) {
+    gg = gg + geom_ribbon(aes(ymin=lower,ymax=upper),alpha=alpha,fill=colour)
+  }
+  ymax = data_est$upper %>% max
+  ymax = ymax*1.05
+  xmin = data_est$Year %>% min -1
+  xmax = data_est$Year %>% max + 1
+  gg = gg +
+    geom_path(aes(y=value),size=path_size,colour=colour)+
+    # scale_colour_brewer(palette=palette_name)+
+    theme_bw(base_size=base_size)+ylab("Spawning number")+
+    ylim(0*ymax,NA)+xlim(xmin,xmax)+
+    # coord_cartesian(xlim = c(xmin,xmax),ylim=c(0,ymax),expand=0)+
+    facet_wrap(vars(Stock_name),scales=scales)
+  if (add_MSY) {
+    Summary_PopDyn = integrate_detBRF(model) %>%
+      dplyr::rename(value = Smsy) %>%
+      dplyr::full_join(data_est %>% dplyr::select(Stock_ID,Year,Stock_name))
+    gg = gg + geom_path(data=Summary_PopDyn,aes(x=Year,y=value),
+                        size=MSY_path_size,colour=MSY_path_colour,linetype=MSY_path_linetype)
+  }
+  gg
+}
+
+#' Function for plotting time-series of spawning biomass
+#' @import ggplot
+#' @inheritParams out_summary_estimate
+#' @param model \code{samuika} object
+#' @encoding UTF-8
+#' @export
+plot_spawning_biomass = function(model,CI=0.8,plot_CI=TRUE,Stock_name=NULL,
+                              base_size=18,path_size=1.5,colour="blue",point_size=2,
+                              alpha=0.4,scales="fix",add_MSY,
+                              MSY_path_size=1,MSY_path_colour = "orange",MSY_path_linetype = "dashed"){
+  data_est = out_summary_estimate(model,CI=CI) %>%
+    filter(category == "Spawning_biomass")
+  if (is.null(Stock_name)) {
+    data_est = data_est %>% mutate(Stock_name = as.character(Stock_ID))
+  } else {
+    data_est$Stock_name = Stock_name[data_est$Stock_ID+1]
+  }
+  gg = ggplot(data=data_est,aes(x=Year))
+  if (plot_CI) {
+    gg = gg + geom_ribbon(aes(ymin=lower,ymax=upper),alpha=alpha,fill=colour)
+  }
+  ymax = data_est$upper %>% max
+  ymax = ymax*1.05
+  xmin = data_est$Year %>% min -1
+  xmax = data_est$Year %>% max + 1
+  gg = gg +
+    geom_path(aes(y=value),size=path_size,colour=colour)+
+    # scale_colour_brewer(palette=palette_name)+
+    theme_bw(base_size=base_size)+ylab("Stock biomass")+
+    ylim(0,NA)+xlim(xmin,xmax)+
+    facet_wrap(vars(Stock_name),scales=scales)
+  if (add_MSY) {
+    Summary_PopDyn = integrate_detBRF(model) %>%
+      dplyr::mutate(value = Smsy*Weight*model$input$scale_num_to_mass) %>%
+      dplyr::full_join(data_est %>% dplyr::select(Stock_ID,Year,Stock_name))
+    gg = gg + geom_path(data=Summary_PopDyn,aes(x=Year,y=value),
+                        size=MSY_path_size,colour=MSY_path_colour,linetype=MSY_path_linetype)
+  }
+  gg
+}
+
+
+#' Function for plotting time-series of fishing mortality coefficient
+#' @import ggplot
+#' @inheritParams out_summary_estimate
+#' @param model \code{samuika} object
+#' @encoding UTF-8
+#' @export
+plot_F = function(model,CI=0.8,plot_CI=TRUE,Stock_name=NULL,
+                                 base_size=18,path_size=1.5,colour="blue",point_size=2,
+                                 alpha=0.4,scales="fix",add_MSY,
+                                 MSY_path_size=1,MSY_path_colour = "orange",MSY_path_linetype = "dashed"){
+  data_est = out_summary_estimate(model,CI=CI) %>%
+    filter(category == "F")
+  if (is.null(Stock_name)) {
+    data_est = data_est %>% mutate(Stock_name = as.character(Stock_ID))
+  } else {
+    data_est$Stock_name = Stock_name[data_est$Stock_ID+1]
+  }
+  gg = ggplot(data=data_est,aes(x=Year))
+  if (plot_CI) {
+    gg = gg + geom_ribbon(aes(ymin=lower,ymax=upper),alpha=alpha,fill=colour)
+  }
+  ymax = data_est$upper %>% max
+  ymax = ymax*1.05
+  xmin = data_est$Year %>% min -1
+  xmax = data_est$Year %>% max + 1
+  gg = gg +
+    geom_path(aes(y=value),size=path_size,colour=colour)+
+    # scale_colour_brewer(palette=palette_name)+
+    theme_bw(base_size=base_size)+ylab("F")+
+    ylim(0,NA)+xlim(xmin,xmax)+
+    facet_wrap(vars(Stock_name),scales=scales)
+  if (add_MSY) {
+    Summary_PopDyn = integrate_detBRF(model) %>%
+      dplyr::rename(value = Fmsy) %>%
+      dplyr::full_join(data_est %>% dplyr::select(Stock_ID,Year,Stock_name))
+    gg = gg + geom_path(data=Summary_PopDyn,aes(x=Year,y=value),
+                        size=MSY_path_size,colour=MSY_path_colour,linetype=MSY_path_linetype)
+  }
+  gg
+}
+
+
+#' Function for visualizing yield curve from trace_future
+#' @import ggplot2
+#' @param trace_future_res \code{trace_future} object
+#' @param title figure title
+#' @encoding UTF-8
+#' @export
+visualize_yield_curve = function(trace_future_res,
+                                 title = NULL) {
+  alpha = 0.3
+  trace_table = trace_future_res$trace_table
+  g1 = ggplot(trace_table,aes(x=Spawning_biomass, y=Catch_biomass)) +
+    geom_ribbon(aes(ymin=0,ymax=Catch_biomass),
+                fill = "blue", alpha=0.4, colour = "blue", size = 1)+
+    ylim(0,NA) +
+    theme_bw(base_size=14)
+  if (!is.null(title))g1 = g1 + ggtitle(title)
+  (g1)
 }
