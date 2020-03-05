@@ -1084,7 +1084,7 @@ out_beta_table = function(future_HCR, SBmsy, Fmsy = NULL, beta = seq(0,1,by = 0.
                           filename = "beta_table") {
   if (is.null(Fmsy)) stop("Set Fmsy to be multiplied by beta!!!")
   if (is.null(SBmsy)) stop("Set SBmsy for calculating achievement probability!!!")
-  
+
   SBlimit = future_HCR$input$SBrefs[1]
   SBban = future_HCR$input$SBrefs[2]
 
@@ -1092,13 +1092,13 @@ out_beta_table = function(future_HCR, SBmsy, Fmsy = NULL, beta = seq(0,1,by = 0.
     Ptarget_Fcurrent = get_prob_ref(future_Fcurrent, ref_value = SBmsy)
     Plimit_Fcurrent = get_prob_ref(future_Fcurrent, ref_value = SBlimit)
     Pban_Fcurrent = get_prob_ref(future_Fcurrent, ref_value = SBban)
-    summary_table = future_Fcurrent$mean_table %>% 
+    summary_table = future_Fcurrent$mean_table %>%
       dplyr::filter(Status == "Future") %>%
-      dplyr::mutate(Ptarget = Ptarget, Plimit = Plimit_Fcurrent, Pban = Pban_Fcurrent) %>%
+      dplyr::mutate(Ptarget = Ptarget_Fcurrent, Plimit = Plimit_Fcurrent, Pban = Pban_Fcurrent) %>%
       dplyr::mutate(scenario = "Fcurrent", beta = NA,scenario_no = 0)
     summary_table0 = summary_table
   }
-  
+
   beta_seq = beta
   for (j in 1:length(beta_seq)) {
     cat("---",j,"---\n")
@@ -1106,12 +1106,12 @@ out_beta_table = function(future_HCR, SBmsy, Fmsy = NULL, beta = seq(0,1,by = 0.
     input_tmp = future_HCR$input
     input_tmp$Ftarget = beta2*Fmsy
     future_HCR2 = do.call(future_sim, input_tmp)
-    
+
     Ptarget = get_prob_ref(future_HCR2, ref_value = SBmsy)
     Plimit = get_prob_ref(future_HCR2, ref_value = SBlimit)
     Pban = get_prob_ref(future_HCR2, ref_value = SBban)
-    
-    beta_table = future_HCR2$mean_table %>%   
+
+    beta_table = future_HCR2$mean_table %>%
       dplyr::filter(Status == "Future") %>%
       dplyr::mutate(Ptarget = Ptarget, Plimit = Plimit, Pban = Pban) %>%
       dplyr::mutate(scenario = paste0("beta=",beta2), beta = beta2,scenario_no = j)
@@ -1122,46 +1122,46 @@ out_beta_table = function(future_HCR, SBmsy, Fmsy = NULL, beta = seq(0,1,by = 0.
     }
     summary_table = summary_table2
   }
-  summary_table2 = summary_table %>% 
+  summary_table2 = summary_table %>%
     dplyr::select(scenario_no,scenario, beta, Year,Stock_biomass,Spawning_biomass,Catch_biomass,Ptarget,Plimit,Pban,F)
   write.csv(summary_table2, row.names = FALSE,file = paste0(filename,"_all.csv"))
-  
+
   catch_mean  = summary_table2 %>% dplyr::select(scenario_no,scenario, beta, Year,Catch_biomass) %>%
     tidyr::spread(key = Year, value = Catch_biomass) %>%
     dplyr::arrange(desc(scenario_no)) %>%
     dplyr::select(-scenario_no)
   write.csv(catch_mean, row.names = FALSE,file = paste0(filename,"_Catch_biomass_mean.csv"))
-  
+
   stock_biomass_mean  = summary_table2 %>% dplyr::select(scenario_no,scenario, beta, Year,Stock_biomass) %>%
     tidyr::spread(key = Year, value = Stock_biomass) %>%
     dplyr::arrange(desc(scenario_no)) %>%
     dplyr::select(-scenario_no)
   write.csv(stock_biomass_mean, row.names = FALSE,file = paste0(filename,"_Stock_biomass_mean.csv"))
-  
+
   spawning_biomass_mean  = summary_table2 %>% dplyr::select(scenario_no,scenario, beta, Year,Spawning_biomass) %>%
     tidyr::spread(key = Year, value = Spawning_biomass) %>%
     dplyr::arrange(desc(scenario_no)) %>%
     dplyr::select(-scenario_no)
   write.csv(spawning_biomass_mean, row.names = FALSE,file = paste0(filename,"_Spawning_biomass_mean.csv"))
-  
+
   F_mean  = summary_table2 %>% dplyr::select(scenario_no,scenario, beta, Year,F) %>%
     tidyr::spread(key = Year, value = F) %>%
     dplyr::arrange(desc(scenario_no)) %>%
     dplyr::select(-scenario_no)
   write.csv(F_mean, row.names = FALSE,file = paste0(filename,"_F_mean.csv"))
-  
+
   Ptarget_table  = summary_table2 %>% dplyr::select(scenario_no,scenario, beta, Year,Ptarget) %>%
     tidyr::spread(key = Year, value = Ptarget) %>%
     dplyr::arrange(desc(scenario_no)) %>%
     dplyr::select(-scenario_no)
   write.csv(Ptarget_table, row.names = FALSE,file = paste0(filename,"_Ptarget.csv"))
-  
+
   Plimit_table  = summary_table2 %>% dplyr::select(scenario_no,scenario, beta, Year,Plimit) %>%
     tidyr::spread(key = Year, value = Plimit) %>%
     dplyr::arrange(desc(scenario_no)) %>%
     dplyr::select(-scenario_no)
   write.csv(Plimit_table, row.names = FALSE,file = paste0(filename,"_Plimit.csv"))
-  
+
   Pban_table  = summary_table2 %>% dplyr::select(scenario_no,scenario, beta, Year,Pban) %>%
     tidyr::spread(key = Year, value = Pban) %>%
     dplyr::arrange(desc(scenario_no)) %>%
