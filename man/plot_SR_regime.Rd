@@ -21,7 +21,10 @@ plot_SR_regime(
   legend_key_size = 1,
   legend_off = TRUE,
   palette_name = "Set1",
-  point_size = 2
+  point_size = 2,
+  connect_point = TRUE,
+  connect_point_size = 1,
+  label_year = NULL
 )
 }
 \arguments{

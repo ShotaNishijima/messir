@@ -779,7 +779,7 @@ convert_samuika_estMSY = function(samuika_res, Stock_ID = 0, scale_num_to_mass =
 }
 
 #' Function for plotting time series of catch biomass
-#' @import ggplot
+#' @import ggplot2
 #' @inheritParams out_summary_estimate
 #' @param model \code{samuika} object
 #' @encoding UTF-8
@@ -830,7 +830,7 @@ plot_catch = function(model,CI=0.8,plot_CI=TRUE,Stock_name=NULL,plot_obs=TRUE,
 }
 
 #' Function for plotting time-series of stock biomass
-#' @import ggplot
+#' @import ggplot2
 #' @inheritParams out_summary_estimate
 #' @param model \code{samuika} object
 #' @encoding UTF-8
@@ -871,7 +871,7 @@ plot_stock_biomass = function(model,CI=0.8,plot_CI=TRUE,Stock_name=NULL,
 }
 
 #' Function for plotting time-series of stock number
-#' @import ggplot
+#' @import ggplot2
 #' @inheritParams out_summary_estimate_n
 #' @param model \code{samuika} object
 #' @encoding UTF-8
@@ -923,7 +923,7 @@ plot_stock_number = function(model,CI=0.8,plot_CI=TRUE,Stock_name=NULL,plot_obs=
 }
 
 #' Function for plotting time-series of spawning number
-#' @import ggplot
+#' @import ggplot2
 #' @inheritParams out_summary_estimate_n
 #' @param model \code{samuika} object
 #' @encoding UTF-8
@@ -965,7 +965,7 @@ plot_spawning_number = function(model,CI=0.8,plot_CI=TRUE,Stock_name=NULL,
 }
 
 #' Function for plotting time-series of spawning biomass
-#' @import ggplot
+#' @import ggplot2
 #' @inheritParams out_summary_estimate
 #' @param model \code{samuika} object
 #' @encoding UTF-8
@@ -1007,7 +1007,7 @@ plot_spawning_biomass = function(model,CI=0.8,plot_CI=TRUE,Stock_name=NULL,
 
 
 #' Function for plotting time-series of fishing mortality coefficient
-#' @import ggplot
+#' @import ggplot2
 #' @inheritParams out_summary_estimate
 #' @param model \code{samuika} object
 #' @encoding UTF-8
@@ -1065,4 +1065,106 @@ visualize_yield_curve = function(trace_future_res,
     theme_bw(base_size=14)
   if (!is.null(title))g1 = g1 + ggtitle(title)
   (g1)
+}
+
+
+#' output summary table when changing beta
+#' @import ggplot2
+#' @import dplyr
+#' @inheritParams get_prob_ref
+#' @param future_HCR \code{future_sim} object with \code{HCR = TRUE}
+#' @param SBmsy SBmsy as a target reference point
+#' @param Fmsy Fmsy to be multiplied by beta
+#' @param beta vector of beta (multipliers of Fmsy)
+#' @param future_Fcurrent \code{future_sim} object with Fcurrent (optional)
+#' @param filename file name of saving
+#' @encoding UTF-8
+#' @export
+out_beta_table = function(future_HCR, SBmsy, Fmsy = NULL, beta = seq(0,1,by = 0.1), future_Fcurrent = NULL,
+                          filename = "beta_table") {
+  if (is.null(Fmsy)) stop("Set Fmsy to be multiplied by beta!!!")
+  if (is.null(SBmsy)) stop("Set SBmsy for calculating achievement probability!!!")
+  
+  SBlimit = future_HCR$input$SBrefs[1]
+  SBban = future_HCR$input$SBrefs[2]
+
+  if (!is.null(future_Fcurrent)) {
+    Ptarget_Fcurrent = get_prob_ref(future_Fcurrent, ref_value = SBmsy)
+    Plimit_Fcurrent = get_prob_ref(future_Fcurrent, ref_value = SBlimit)
+    Pban_Fcurrent = get_prob_ref(future_Fcurrent, ref_value = SBban)
+    summary_table = future_Fcurrent$mean_table %>% 
+      dplyr::filter(Status == "Future") %>%
+      dplyr::mutate(Ptarget = Ptarget, Plimit = Plimit_Fcurrent, Pban = Pban_Fcurrent) %>%
+      dplyr::mutate(scenario = "Fcurrent", beta = NA,scenario_no = 0)
+    summary_table0 = summary_table
+  }
+  
+  beta_seq = beta
+  for (j in 1:length(beta_seq)) {
+    cat("---",j,"---\n")
+    beta2 = beta_seq[j]
+    input_tmp = future_HCR$input
+    input_tmp$Ftarget = beta2*Fmsy
+    future_HCR2 = do.call(future_sim, input_tmp)
+    
+    Ptarget = get_prob_ref(future_HCR2, ref_value = SBmsy)
+    Plimit = get_prob_ref(future_HCR2, ref_value = SBlimit)
+    Pban = get_prob_ref(future_HCR2, ref_value = SBban)
+    
+    beta_table = future_HCR2$mean_table %>%   
+      dplyr::filter(Status == "Future") %>%
+      dplyr::mutate(Ptarget = Ptarget, Plimit = Plimit, Pban = Pban) %>%
+      dplyr::mutate(scenario = paste0("beta=",beta2), beta = beta2,scenario_no = j)
+    if (j==1 && is.null(future_Fcurrent)) {
+      summary_table2 = beta_table
+    } else {
+      summary_table2 = full_join(summary_table, beta_table)
+    }
+    summary_table = summary_table2
+  }
+  summary_table2 = summary_table %>% 
+    dplyr::select(scenario_no,scenario, beta, Year,Stock_biomass,Spawning_biomass,Catch_biomass,Ptarget,Plimit,Pban,F)
+  write.csv(summary_table2, row.names = FALSE,file = paste0(filename,"_all.csv"))
+  
+  catch_mean  = summary_table2 %>% dplyr::select(scenario_no,scenario, beta, Year,Catch_biomass) %>%
+    tidyr::spread(key = Year, value = Catch_biomass) %>%
+    dplyr::arrange(desc(scenario_no)) %>%
+    dplyr::select(-scenario_no)
+  write.csv(catch_mean, row.names = FALSE,file = paste0(filename,"_Catch_biomass_mean.csv"))
+  
+  stock_biomass_mean  = summary_table2 %>% dplyr::select(scenario_no,scenario, beta, Year,Stock_biomass) %>%
+    tidyr::spread(key = Year, value = Stock_biomass) %>%
+    dplyr::arrange(desc(scenario_no)) %>%
+    dplyr::select(-scenario_no)
+  write.csv(stock_biomass_mean, row.names = FALSE,file = paste0(filename,"_Stock_biomass_mean.csv"))
+  
+  spawning_biomass_mean  = summary_table2 %>% dplyr::select(scenario_no,scenario, beta, Year,Spawning_biomass) %>%
+    tidyr::spread(key = Year, value = Spawning_biomass) %>%
+    dplyr::arrange(desc(scenario_no)) %>%
+    dplyr::select(-scenario_no)
+  write.csv(spawning_biomass_mean, row.names = FALSE,file = paste0(filename,"_Spawning_biomass_mean.csv"))
+  
+  F_mean  = summary_table2 %>% dplyr::select(scenario_no,scenario, beta, Year,F) %>%
+    tidyr::spread(key = Year, value = F) %>%
+    dplyr::arrange(desc(scenario_no)) %>%
+    dplyr::select(-scenario_no)
+  write.csv(F_mean, row.names = FALSE,file = paste0(filename,"_F_mean.csv"))
+  
+  Ptarget_table  = summary_table2 %>% dplyr::select(scenario_no,scenario, beta, Year,Ptarget) %>%
+    tidyr::spread(key = Year, value = Ptarget) %>%
+    dplyr::arrange(desc(scenario_no)) %>%
+    dplyr::select(-scenario_no)
+  write.csv(Ptarget_table, row.names = FALSE,file = paste0(filename,"_Ptarget.csv"))
+  
+  Plimit_table  = summary_table2 %>% dplyr::select(scenario_no,scenario, beta, Year,Plimit) %>%
+    tidyr::spread(key = Year, value = Plimit) %>%
+    dplyr::arrange(desc(scenario_no)) %>%
+    dplyr::select(-scenario_no)
+  write.csv(Plimit_table, row.names = FALSE,file = paste0(filename,"_Plimit.csv"))
+  
+  Pban_table  = summary_table2 %>% dplyr::select(scenario_no,scenario, beta, Year,Pban) %>%
+    tidyr::spread(key = Year, value = Pban) %>%
+    dplyr::arrange(desc(scenario_no)) %>%
+    dplyr::select(-scenario_no)
+  write.csv(Pban_table, row.names = FALSE,file = paste0(filename,"_Pban.csv"))
 }
