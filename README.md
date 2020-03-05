@@ -9,8 +9,9 @@
 ```
 # install.package("devtools") # if not installed
 devtools::install_github("ShotaNishijima/messir")
+# if you want to use dev branch
+# devtools::install_github("ShotaNishijima/messir@dev") 
 library(messir)
-
 ```
 
 ## Vignette

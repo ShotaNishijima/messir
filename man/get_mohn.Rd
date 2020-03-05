@@ -10,7 +10,7 @@ get_mohn(retro_res, first_eval_year = NULL, lag_year = 1)
 \arguments{
 \item{retro_res}{retro_samuika object}
 
-\item{first_eval_year}{firstly-evaluated year}
+\item{first_eval_year}{first year to be evaluated}
 
 \item{lag_year}{time-lag in evaluation of Mohn's rho}
 }

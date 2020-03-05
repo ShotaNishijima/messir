@@ -18,8 +18,11 @@
 NULL
 
 #' future simulation for Surume-Ika
+#' @inheritParams simulate_rec_resid
 #' @param assess_data assessment data
 #' @param Fcurrent current fishing mortality coefficient
+#' @param use_Catch_est whether replacing \code{Catch_biomass} by \code{Catch_est} in \code{assess_data}
+#' @param sim_rec_resid matrix of sim_year x nsim, DON'T forget to accont for bias-corrected mean
 #' @encoding UTF-8
 #' @export
 future_sim = function(
@@ -31,7 +34,7 @@ future_sim = function(
   Fcurrent_year=NULL,
   # pre_catch=NULL,
   SR="HS", # or "BH" or "RI"
-  rec_arg=list(a=NULL,b=NULL,sd=0,rho=0,resid=NULL),
+  rec_arg=list(a=NULL,b=NULL,sd=0,rho=0,resampled_resid=NULL,resid_for_bias_correction=NULL),
   bias_correct=TRUE,
   weight,
   num_to_mass_scale=1/1000,
@@ -43,21 +46,29 @@ future_sim = function(
   Ftarget = NULL, # Ftarget = beta*Fmsy
   array_to_tibble = FALSE,
   sim_rec_resid = NULL, # matrix of sim_year X nsim
-  scenario_name = NULL
+  scenario_name = NULL,
+  use_Catch_est = FALSE,
+  rec_resid_resample = FALSE
 ) {
 
   argname = ls()
   arglist = lapply(argname,function(x) eval(parse(text=x)))
   names(arglist) = argname
 
+  if (use_Catch_est) {
+    if ("Catch_est" %in% colnames(assess_data)) {
+      assess_data$Catch_biomass <- assess_data$Catch_est
+    }
+  }
+
   # SR function
-  if (SR == "HS") SRF = function(x,a=rec_arg$a,b=rec_arg$b) ifelse(x>b,b*a,x*a)
-  if (SR == "BH") SRF = function(x,a=rec_arg$a,b=rec_arg$b) a*x/(1+b*x)
-  if (SR == "RI") SRF = function(x,a=rec_arg$a,b=rec_arg$b) a*x*exp(-b*x)
+  if (SR == "HS") SRFF = function(x,a=rec_arg$a,b=rec_arg$b) ifelse(x>b,b*a,x*a)
+  if (SR == "BH") SRFF = function(x,a=rec_arg$a,b=rec_arg$b) a*x/(1+b*x)
+  if (SR == "RI") SRFF = function(x,a=rec_arg$a,b=rec_arg$b) a*x*exp(-b*x)
 
   rec_pred_by_SR <- rec_deviance_to_SR <- NA
   for (i in 2:nrow(assess_data)) {
-    rec_pred_by_SR <- c(rec_pred_by_SR,SRF(assess_data$Spawning_number[i-1]))
+    rec_pred_by_SR <- c(rec_pred_by_SR,SRFF(assess_data$Spawning_number[i-1]))
     rec_deviance_to_SR <- c(rec_deviance_to_SR,log(assess_data$Stock_number[i]/rec_pred_by_SR[i]))
   }
 
@@ -107,19 +118,42 @@ future_sim = function(
   sim_array[,"Year",] = (max(assess_data$Year)+1):(max(assess_data$Year)+sim_year)
   sim_array[,"Weight",] = weight
   sim_array[,"M",] = M
-  sigma = sqrt(rec_arg$sd^2/(1-rec_arg$rho^2)) #recruitment variance including autocorrelation
-  bias_corrected_mean = ifelse(bias_correct, -0.5*sigma^2,0)
+  if (is.null(rec_arg$rho)) {
+    sigma = sd
+  } else {
+    sigma = sqrt(rec_arg$sd^2/(1-rec_arg$rho^2)) #recruitment variance including autocorrelation
+  }
 
   if (is.null(sim_rec_resid)) {
-    set.seed(seed)
-    sim_array[,"rec_resid_excl_AR",] <- rnorm(prod(dim(sim_array[,"rec_resid_excl_AR",])),bias_corrected_mean,rec_arg$sd)
+    # set.seed(seed)
+    if (rec_resid_resample) {
+      if (is.null(rec_arg$resampled_resid)) {
+        warning("Please include residuals in 'rec_arg$resampled_resid'")
+      }
+      sim_array[,"rec_resid_excl_AR",] <- simulate_rec_resid(sd=NULL,rho=rec_arg$rho,resample = TRUE,resampled_resid=rec_arg$resampled_resid,
+                                                             bias_correct=bias_correct,resid_for_bias_correction=rec_arg$resid_for_bias_correction,
+                                                             year=sim_year,nsim=nsim,seed=seed)
+    } else {
+      sim_array[,"rec_resid_excl_AR",] <- simulate_rec_resid(sd=rec_arg$sd,rho=rec_arg$rho,resample = FALSE,resampled_resid=NULL,
+                                                             bias_correct=bias_correct,resid_for_bias_correction=NULL,
+                                                             year=sim_year,nsim=nsim,seed=seed)
+    }
   } else {
     sim_array[,"rec_resid_excl_AR",] <- sim_rec_resid
+  }
+  if (rec_resid_resample) {
+    if (is.null(rec_arg$resid_for_bias_correction) && bias_correct) {
+      warning("Residuals for bias correction are assumed to be identical to resampled residuals")
+      rec_arg$resid_for_bias_correction = resampled_resid
+    }
+    bias_corrected_mean = ifelse(bias_correct, -log(mean(exp(rec_arg$resid_for_bias_correction))),0)
+  } else {
+    bias_corrected_mean = ifelse(bias_correct, -0.5*sigma^2,0)
   }
 
   for (y in 1:sim_year) {
     if (y == 1) {
-      sim_array[y,"rec_pred_by_SR",] = SRF(unlist(dplyr::select(dplyr::filter(all_data,Year==max(Year)),Spawning_number)))
+      sim_array[y,"rec_pred_by_SR",] = SRFF(unlist(dplyr::select(dplyr::filter(all_data,Year==max(Year)),Spawning_number)))
       # sim_array[y,"rec_deviance_to_SR",] = sim_array[y,"rec_resid_excl_AR",] + rec_arg$rho*unlist(dplyr::select(dplyr::filter(all_data,Year==max(Year)),rec_deviance_to_SR))
       sim_array[y,"rec_pred_incl_AR",] = sim_array[y,"rec_pred_by_SR",]*exp(rec_arg$rho*unlist(dplyr::select(dplyr::filter(all_data,Year==max(Year)),rec_deviance_to_SR)))
       sim_array[y,"Stock_number",] = sim_array[y,"rec_pred_incl_AR",]*exp(sim_array[y,"rec_resid_excl_AR",])
@@ -129,7 +163,7 @@ future_sim = function(
       sim_array[y,"Spawning_number",] = sim_array[y,"Stock_number",]*exp(-sim_array[y,"F",]-sim_array[y,"M",])
       sim_array[y,"Catch_number",] = Catch_func(sim_array[y,"Stock_number",],sim_array[y,"F",],sim_array[y,"M",])
     } else {
-      sim_array[y,"rec_pred_by_SR",] = SRF(unlist(sim_array[y-1,"Spawning_number",]))
+      sim_array[y,"rec_pred_by_SR",] = SRFF(unlist(sim_array[y-1,"Spawning_number",]))
       # sim_array[y,"rec_deviance_to_SR",] = sim_array[y,"rec_resid_excl_AR",] + rec_arg$rho*(sim_array[y-1,"rec_deviance_to_SR",])
       sim_array[y,"rec_pred_incl_AR",] = sim_array[y,"rec_pred_by_SR",]*exp(rec_arg$rho*sim_array[y-1,"rec_deviance_to_SR",])
       sim_array[y,"Stock_number",] = sim_array[y,"rec_pred_incl_AR",]*exp(sim_array[y,"rec_resid_excl_AR",])
@@ -183,6 +217,32 @@ future_sim = function(
     Res$sim_tibble = sim_tibble
   }
   return(Res)
+}
+
+
+#' Function for simulating recruitment residuals with consideration for bias correction (if neccessary)
+#' @encoding UTF-8
+#' @export
+simulate_rec_resid = function(sd,rho=0,resample = FALSE,resampled_resid=NULL,bias_correct=TRUE,resid_for_bias_correction=NULL,year=NULL,nsim=NULL,seed=1,out="resid") {
+  set.seed(seed)
+  if (resample) {
+    if (rho !=0 ) {
+      warning("'rho' cannot be considered when using resample=TRUE and is automatically set at zero")
+    }
+    if (is.null(resid_for_bias_correction) && bias_correct) {
+      warning("Residuals for bias correction are assumed to be identical to resampled residuals")
+      resid_for_bias_correction = resampled_resid
+    }
+    bias_corrected_mean = ifelse(bias_correct, -log(mean(exp(resid_for_bias_correction))),0)
+    sim_rec_resid = sample(resampled_resid, size=year*nsim, replace=TRUE) + bias_corrected_mean
+  } else {
+    sigma = sqrt(sd^2/(1-rho^2)) #recruitment variance including autocorrelation
+    bias_corrected_mean = ifelse(bias_correct, -0.5*sigma^2,0)
+    sim_rec_resid = rnorm(year*nsim,bias_corrected_mean,sd)
+  }
+  if (out=="resid") output = sim_rec_resid
+  if (out=="bias_corrected_mean") output = bias_corrected_mean
+  return(invisible(output))
 }
 
 
@@ -777,24 +837,6 @@ trace_future = function(
   return (RES)
 }
 
-#' Function for visualizing yield curve from trace_future
-#' @import ggplot2
-#' @param trace_future_res \code{trace_future} object
-#' @param title figure title
-#' @encoding UTF-8
-#' @export
-visualize_yield_curve = function(trace_future_res,
-                                 title = NULL) {
-  alpha = 0.3
-  trace_table = trace_future_res$trace_table
-  g1 = ggplot(trace_table,aes(x=Spawning_biomass, y=Catch_biomass)) +
-    geom_ribbon(aes(ymin=0,ymax=Catch_biomass),
-                fill = "blue", alpha=0.4, colour = "blue", size = 1)+
-      ylim(0,NA) +
-      theme_bw(base_size=14)
-  if (!is.null(title))g1 = g1 + ggtitle(title)
-  (g1)
-}
 
 #' #' Theme for ggplot
 #' #' @import ggplot2
@@ -810,82 +852,3 @@ visualize_yield_curve = function(trace_future_res,
 #'           legend.position="none")
 #' }
 
-#' Function for plotting future_res
-#' @import ggplot2
-#' @param future_list list of \code{future_sim}
-#' @param title figure title
-#' @encoding UTF-8
-#' @export
-visualize_future = function(
-  future_list,
-  scenario_name = NULL,
-  what_center = "mean", # or median or geomean
-  CI_range = 0.8, # NULL if not neccessary
-  title = NULL,
-  # example_number = 0, # number of described simulations
-  # seed = 12345, # seed for extracting examples
-  BRP = NULL # under consideration...
-) {
-
-  if (is.null(scenario_name)) {
-    for (i in 1:length(future_list)) {
-      scenario_name = c(scenario_name, sprintf("scenario_%s",i))
-    }
-  }
-
-  plot_data_all = tibble()
-  for (i in 1:length(future_list)) {
-
-    if (what_center == "mean") center_table = future_list[[i]]$mean_table
-    if (what_center == "median") center_table = future_list[[i]]$median_table
-    if (what_center == "geomean") center_table = future_list[[i]]$geomean_table
-
-    center_table = center_table %>%
-      mutate(Scenario = scenario_name[i],Range = "center")
-
-    plot_data_all = bind_rows(plot_data_all,center_table)
-
-    if (!is.null(CI_range)) {
-      lower_data = as_tibble(apply(future_list[[i]]$sim_array,c(1,2),quantile,probs = (1-CI_range)/2)) %>%
-        mutate(Status="Future",Scenario=scenario_name[i],Range="lower")
-      plot_data_all = bind_rows(plot_data_all, lower_data)
-      upper_data = as_tibble(apply(future_list[[i]]$sim_array,c(1,2),quantile,probs = 1-(1-CI_range)/2)) %>%
-        mutate(Status="Future",Scenario=scenario_name[i],Range="upper")
-      plot_data_all = bind_rows(plot_data_all, upper_data)
-    }
-  }
-
-  plot_data_all = dplyr::select(plot_data_all,
-                                Year,Stock_biomass,Spawning_biomass,Catch_biomass,F,
-                                Status,Scenario,Range) %>%
-    tidyr::gather(key=Y, value = value, Stock_biomass,Spawning_biomass,Catch_biomass,F)
-  # dplyr::distinct()
-
-  plot_data_center = mutate(plot_data_all,
-                            Y_f = factor(plot_data_all$Y,
-                                         levels=c("Stock_biomass","Spawning_biomass","Catch_biomass","F"))) %>%
-    filter(Range == "center")
-
-  plot_data_CI =  mutate(plot_data_all,
-                         Y_f = factor(plot_data_all$Y,
-                                      levels=c("Stock_biomass","Spawning_biomass","Catch_biomass","F"))) %>%
-    filter(Range != "center") %>%
-    spread(key = Range, value=value)
-
-  alpha = 0.4
-  g1 = ggplot(plot_data_center) +
-    geom_line(data = dplyr::filter(plot_data_center),
-              aes(x=Year,y=value,group=Scenario, colour=Scenario),size=1)+
-    geom_line(data = dplyr::filter(plot_data_center,Status=="Past"&Scenario==scenario_name[1]),
-              aes(x=Year,y=value),size=1, colour="black")+
-    geom_ribbon(data = plot_data_CI,
-                aes(x=Year,ymin=lower,ymax=upper,
-                    group=Scenario, fill=Scenario),alpha=alpha) +
-    facet_wrap(~Y_f, scales="free_y") +
-    ylim(0,NA) +
-    theme_bw(base_size=14)+
-    theme(axis.title.y = element_blank())
-
-  if (!is.null(title)) g1 = g1 + ggtitle(title)
-  return(g1)
-}

@@ -11,7 +11,7 @@ samuika(
   index_data,
   SR = "BH",
   regime_year = NULL,
-  regime_par = c("a", "b", "sd")[c(1:2)],
+  regime_par = c("a", "b", "sd")[c(1, 2, 3)],
   regime_key = 0:length(regime_year),
   stock_shared_par = c("a", "b", "sd", "SDlogF", "SDlogC")[c(1:5)],
   SDlogCPUE_key = rep(0, length(unique(index_data$Index_ID))),
@@ -30,11 +30,12 @@ samuika(
   add_cpue_error_type = 0,
   add_cpue_all = 1,
   Fprocess_remove_year = NULL,
+  p0_list = NULL,
   M = 0.6,
   Pope = FALSE,
   scale_num_to_mass = 0.1,
   bias_correct = TRUE,
-  bias_correct_control = list(sd = bias_correct),
+  bias_correct_control = list(sd = FALSE),
   fixed_par = c("a", "b", "sd", "rec_rho", "SDlogF", "rho_SDlogF", "SDlogC", "q",
     "SDlogCPUE")[6],
   map_add = NULL,
@@ -103,7 +104,7 @@ samuika(
 
 \item{fixed_par}{which parameters among \code{c("a","b","sd","rec_rho","SDlogF","rho_SDlogF","SDlogC","q","SDlogCPUE")} are fixed at their initial values}
 
-\item{map_add}{added factor to map other than fixed_per}
+\item{map_add}{added factor to map other than fixed_par}
 }
 \description{
 State-Space Assessment model Used for surume-IKA (samuika) ----

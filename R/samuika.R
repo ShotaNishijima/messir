@@ -27,7 +27,7 @@
 #' @param scale_num_to_mass scaling multiplier in conversion of number to mass
 #' @param bias_correct bias correct option in \code{sdreport}
 #' @param fixed_par which parameters among \code{c("a","b","sd","rec_rho","SDlogF","rho_SDlogF","SDlogC","q","SDlogCPUE")} are fixed at their initial values
-#' @param map_add added factor to map other than fixed_per
+#' @param map_add added factor to map other than fixed_par
 #'
 #' @encoding UTF-8
 #' @export
@@ -37,7 +37,7 @@ samuika = function(
   index_data,
   SR = "BH",
   regime_year = NULL,
-  regime_par = c("a","b","sd")[c(1:2)],
+  regime_par = c("a","b","sd")[c(1,2,3)],
   regime_key = 0:length(regime_year),
   stock_shared_par = c("a","b","sd","SDlogF","SDlogC")[c(1:5)],
   SDlogCPUE_key = rep(0,length(unique(index_data$Index_ID))),
@@ -56,11 +56,14 @@ samuika = function(
   add_cpue_error_type = 0,
   add_cpue_all = 1, # 0: FALSE, 1: modeling E(F+M), 2: modeling log(F+M)
   Fprocess_remove_year = NULL,
+  # add_fixed_F = 0,
+  # lambda = 0,
+  p0_list = NULL,
   M = 0.6,
   Pope = FALSE,
   scale_num_to_mass = 0.1,
   bias_correct = TRUE,
-  bias_correct_control = list(sd=bias_correct),
+  bias_correct_control = list(sd=FALSE),
   fixed_par = c("a","b","sd","rec_rho","SDlogF","rho_SDlogF","SDlogC","q","SDlogCPUE")[6],
   map_add = NULL,
   logF_diff = 0, #
@@ -119,7 +122,10 @@ samuika = function(
       stop("'length(regime_key) < length(regime_year)+1' should be satisfied")
     }
     if (regime_key[1]!=0) {
-      stop("'regime_key' must start with zero")
+      stop("'regime_key' must start at zero")
+    }
+    if (max(regime_key) >= length(regime_key)) {
+      stop("'max(regime_key)' must be smaller than 'length(regime_key)'")
     }
     regime_iy = regime_year-start_year+1
     if ("a" %in% regime_par) {
@@ -264,7 +270,10 @@ samuika = function(
   }
 
   data_list = list(NYear=NYear,NStock=NStock,M=M_mat,Weight=weight_mat,
-                   SDlogF_key=SDlogF_key,logF_diff=logF_diff,F_incl_w = F_incl_w,
+                   SDlogF_key=SDlogF_key,logF_diff=logF_diff,
+                   F_incl_w = F_incl_w,
+                   # lambda = lambda,
+                   # add_fixed_F=as.numeric(add_fixed_F),
                    SR=SR_tmb,reca_key=reca_key,recb_key=recb_key,recSD_key=recSD_key,
                    NCatch=NCatch,Catch=Catch,Pope=as.numeric(Pope),Catch_key=Catch_key,scale_num_to_mass=scale_num_to_mass,
                    NIndex=NIndex,Index=Index,Index_key=Index_key,
@@ -273,24 +282,29 @@ samuika = function(
                    add_cpue=add_cpue2,add_cpue_tday=add_cpue_tday,add_cpue_covariate=add_cpue_covariate,
                    add_cpue_SD_key = add_cpue_SD_key,cpue_add_error_type = add_cpue_error_type)
 
-  param_init = list(
-    logSDlogF = rep_len(log(SDlogF_init),max(SDlogF_key)+1),
-    rho_SDlogF = rho_SDlogF_init,
-    rec_loga = rep_len(log(reca_init),max(reca_key)+1),
-    rec_logb = rep_len(log(recb_init),max(recb_key)+1),
-    rec_logSD = rep_len(log(recSD_init),max(recSD_key)+1),
-    trans_rho = trans_rho_init,
-    logSDlogC = rep_len(log(SDlogC_init),max(Catch_key[,3])+1),
-    logQ = rep_len(log(q_init),max(Index_key[,3])+1),
-    logSDcpue = rep_len(log(SDcpue_init), max(Index_key[,4])+1),
-    beta = rep(1,length(beta_fix)),
-    logN = matrix(log(23.7),nrow=dim(weight_mat)[1],ncol=dim(weight_mat)[2]),
-    logF = matrix(log(0.38),nrow=dim(weight_mat)[1],ncol=dim(weight_mat)[2]),
-    logQ_add = rep(log(1),length(unique(add_cpue_info2[,1]))),
-    logSDcpue_add = rep(log(1),length(unique(add_cpue_SD_key))),
-    # logSDcpue_add = rep(log(0.001),length(unique(add_cpue_SD_key))),
-    alpha = matrix(0,ncol=ncol(add_cpue_covariate),nrow=length(unique(add_cpue_info2[,1])))
-  )
+  if (is.null(p0_list)) {
+    param_init = list(
+      logSDlogF = rep_len(log(SDlogF_init),max(SDlogF_key)+1),
+      rho_SDlogF = rho_SDlogF_init,
+      # add_logF = rep(log(0),sum(F_incl_w==0)),
+      rec_loga = rep_len(log(reca_init),max(reca_key)+1),
+      rec_logb = rep_len(log(recb_init),max(recb_key)+1),
+      rec_logSD = rep_len(log(recSD_init),max(recSD_key)+1),
+      trans_rho = trans_rho_init,
+      logSDlogC = rep_len(log(SDlogC_init),max(Catch_key[,3])+1),
+      logQ = rep_len(log(q_init),max(Index_key[,3])+1),
+      logSDcpue = rep_len(log(SDcpue_init), max(Index_key[,4])+1),
+      beta = rep(1,length(beta_fix)),
+      logN = matrix(log(23.7),nrow=dim(weight_mat)[1],ncol=dim(weight_mat)[2]),
+      logF = matrix(log(0.38),nrow=dim(weight_mat)[1],ncol=dim(weight_mat)[2]),
+      logQ_add = rep(log(1),length(unique(add_cpue_info2[,1]))),
+      logSDcpue_add = rep(log(1),length(unique(add_cpue_SD_key))),
+      # logSDcpue_add = rep(log(0.001),length(unique(add_cpue_SD_key))),
+      alpha = matrix(0,ncol=ncol(add_cpue_covariate),nrow=length(unique(add_cpue_info2[,1])))
+    )
+  } else {
+    param_init = p0_list
+  }
 
   map = list()
   # map$logSDcpue_add = rep(factor(NA), length(param_init$logSDcpue_add))
@@ -358,6 +372,9 @@ samuika = function(
       map[[names(tmp$map_add)[i]]] <- map_add[[i]]
     }
   }
+  # if (add_fixed_F==0) {
+  #   map$add_logF = rep(factor(NA),length(param_init$add_logF))
+  # }
 
   f = TMB::MakeADFun(data=data_list, parameters = param_init, random = c("logN","logF"), DLL="samuika",
                      map = map, silent=silent)
@@ -416,7 +433,7 @@ samuika = function(
       RES$resid_cpue_add = as.numeric(VALUE[names(VALUE)=="resid_add"])
       add_cpue_table = add_cpue_info
       if (!is.null(add_cpue_covariate)) {
-        add_cpue_table = bind_cols(add_cpue_table, tibble(covariate=add_cpue_covariate))
+        add_cpue_table = bind_cols(add_cpue_table, tibble(cpue=add_cpue,tday = add_cpue_tday,covariate=add_cpue_covariate))
       }
       add_cpue_table = add_cpue_table %>%
         mutate(pred_cpue = RES$pred_cpue_add,resid = RES$resid_cpue_add)
@@ -436,7 +453,7 @@ samuika = function(
     # rec_resid = matrix(VALUE[names(VALUE)=="rec_resid"],nrow=NStock)
     # rec_resid[rec_resid==0] <- NA
 
-    Ncol = ifelse(bias_correct,4,2)
+    Ncol = ifelse(bias_correct_control$sd,4,2)
     N_se = matrix(rep_summary[rownames(rep_summary)=="N",Ncol],nrow=NStock)
     SSN_se = matrix(rep_summary[rownames(rep_summary)=="SSN",Ncol],nrow=NStock)
     F_se = matrix(rep_summary[rownames(rep_summary)=="F",Ncol],nrow=NStock)
@@ -538,6 +555,15 @@ samuika = function(
       mutate(Catch_resid = log(Catch_biomass/Catch_est)) %>%
       arrange(Stock_ID, Year)
 
+    regime_id = rep(regime_key[1],nrow(Summary_PopDyn))
+    if (length(regime_year) >1) {
+      for (ii in 1:(length(regime_year))) {
+        regime_id[Summary_PopDyn$Year>=regime_year[ii]] <- regime_key[ii+1]
+      }
+    }
+    Summary_PopDyn = Summary_PopDyn %>%
+      mutate(Regime = regime_id)
+
     RES$Summary_PopDyn = Summary_PopDyn
     Summary_index = full_join(index_data %>% as_tibble(),
                               select(mutate(Index_key %>% as_tibble(), Year = iy+start_year),-iy),
@@ -551,6 +577,7 @@ samuika = function(
 
     RES$Summary_index = Summary_index
   }
+  class(RES) <- "samuika"
 
   invisible(RES)
 }
@@ -563,7 +590,7 @@ samuika = function(
 #' @param n number of maximum removed years
 #' @encoding UTF-8
 #' @export
-retro_samuika = function(samuika_res, n=5, first_remove_catch_year = NULL, first_remove_index_year = NULL) {
+retro_samuika = function(samuika_res, n=5, first_remove_catch_year = NULL, first_remove_index_year = NULL,use_p0 = FALSE) {
   RES=list()
   RES$full <- res.c <- samuika_res
 
@@ -589,12 +616,18 @@ retro_samuika = function(samuika_res, n=5, first_remove_catch_year = NULL, first
     input_tmp$catch_data = catch_data2
     input_tmp$index_data = index_data2
 
-    if (!is.null(input_tmp$logZ_weight)) {
-      logZ_weight2 = dplyr::filter(input_tmp$logZ_weight, Year < max(Year))
-      input_tmp$logZ_weight = logZ_weight
+    # if (!is.null(input_tmp$logZ_weight)) {
+    #   logZ_weight2 = dplyr::filter(input_tmp$logZ_weight, Year < max(Year))
+    #   input_tmp$logZ_weight = logZ_weight
+    # }
+    if (use_p0) {
+      input_tmp$p0_list = res.c$par_list
     }
 
-    res.c = do.call(samuika, input_tmp)
+    res.c = try(do.call(samuika, input_tmp))
+    if (class(res.c)=="try-error") {
+      stop(paste0("Error in ",i,"th trial"))
+    }
     RES$retro[[i]] = res.c
     Summary_PopDyn = Summary_PopDyn %>%
       bind_rows(res.c$Summary_PopDyn %>% mutate(retro_year = i))
@@ -609,7 +642,7 @@ retro_samuika = function(samuika_res, n=5, first_remove_catch_year = NULL, first
 #' @import dplyr
 #' @importFrom dplyr tibble
 #' @param retro_res retro_samuika object
-#' @param first_eval_year firstly-evaluated year
+#' @param first_eval_year first year to be evaluated
 #' @param lag_year time-lag in evaluation of Mohn's rho
 #' @encoding UTF-8
 #' @export
@@ -631,8 +664,94 @@ get_mohn = function(retro_res, first_eval_year = NULL, lag_year = 1) {
   Summary = tibble(N=rowMeans(N_res),B=rowMeans(N_res),
                    SSN=rowMeans(SSN_res),SSB=rowMeans(SSB_res),
                    F=rowMeans(F_res),Catch=rowMeans(C_res))
+  Summary = Summary %>%
+    mutate(Stock_ID = unique(retro_res$full$input$catch_data$Stock_ID)) %>%
+    select(Stock_ID,everything())
 
   RES = list(Summary=Summary,N_res=N_res,B_res=B_res,SSN_res=SSN_res,
              SSB_res=SSB_res,F_res=F_res,C_res=C_res)
 
+}
+
+#' Function for deriving stock-recruitment parameters
+#' @import dplyr
+#' @importFrom dplyr tibble
+#' @param model samuika object
+#' @encoding UTF-8
+#' @export
+get_rec_pars = function(model,M=model$input$M) {
+  rec_par_set = model$Summary_PopDyn %>%
+    dplyr::select(Stock_ID, rec_a, rec_b, rec_sd) %>% unique() %>%
+    mutate(SR=model$input$SR,M=M,Pope=model$input$Pope)
+  rec_par_set
+}
+
+
+#' Calculating deterministic biological reference points
+#' @param rec_pars \code{get_rec_pars} object
+#' @encoding UTF-8
+#' @export
+det_BRF = function(rec_pars) {
+  # if (is.null(weight)) {
+  #   message("Weight is assumed to be 1 for calculating MSY")
+  weight = 1
+  # }
+  rec_pars = mutate(rec_pars,weight=weight)
+  N0_vec <- S0_vec<- h_vec <- Smsy_vec <- Nmsy_vec <- Fmsy_vec <- MSY_vec <- NULL
+  for (i in 1:nrow(rec_pars)) {
+    a = as.numeric(rec_pars$rec_a[i])
+    b = as.numeric(rec_pars$rec_b[i])
+    SR = as.character(rec_pars$SR[i])
+    M = as.numeric(rec_pars$M[i])
+    w = as.numeric(rec_pars$weight[i])
+    Pope = as.numeric(rec_pars$Pope[i])
+    if (a < exp(M)) {
+      stop("Deterministic BRFs can not be calculated when 'a < exp(M)'")
+    }
+    if (SR == "HS") {
+      S0 = a*b/exp(M); N0 = exp(M)*S0;
+      h = 1-b/S0; Smsy = b; Nmsy = a*b;
+    }
+    if (SR == "BH") {
+      S0 = (a-exp(M))/(b*exp(M)); N0 = exp(M)*S0;
+      h = a*0.2*S0/((1+b*0.2*S0)*N0)
+      Smsy = (sqrt(a/exp(M))-1)/b; Nmsy = a*Smsy/(1+b*Smsy)
+    }
+    if (SR == "RI") {
+      S0 = (log(a)-M)/b; N0 = exp(M)*S0;
+      h = a*0.2*S0*exp(-b*0.2*S0)/N0
+      op = optimize(function(x) {(exp(M)*x-a*x*exp(-b*x))}, interval=c(0,S0))
+      Smsy = op$minimum; Nmsy = a*Smsy*exp(-b*Smsy)
+    }
+    Fmsy = log(Nmsy)-log(Smsy)-M
+    MSY = ifelse(Pope,exp(-0.5*M)*Nmsy*(1-exp(-Fmsy))*w,w*(Fmsy/(Fmsy+M))*Nmsy*(1-exp(-Fmsy-M)))
+    N0_vec <- c(N0_vec,N0);
+    S0_vec <- c(S0_vec,S0);
+    h_vec <- c(h_vec,h);
+    Smsy_vec <- c(Smsy_vec,Smsy);
+    Nmsy_vec <- c(Nmsy_vec,Nmsy);
+    Fmsy_vec <- c(Fmsy_vec,Fmsy);
+    MSY_vec <- c(MSY_vec,MSY);
+  }
+  res = rec_pars %>%
+    dplyr::select(-weight) %>%
+    dplyr::mutate(S0=S0_vec,N0=N0_vec,h=h_vec,Smsy=Smsy_vec,Nmsy=Nmsy_vec,Fmsy=Fmsy_vec,MSY_in_number=MSY_vec)
+  return(res)
+}
+
+#' Output summary table with deterministic biological reference points
+#' @inheritParams get_rec_pars
+#' @inheritParams det_BRF
+#' @param model \code{samuika} object
+#' @encoding UTF-8
+#' @export
+integrate_detBRF = function(model, M = model$input$M) {
+  rec_pars = get_rec_pars(model,M=M)
+  rec_pars_detBRF = det_BRF(rec_pars)
+  Summary_PopDyn = model$Summary_PopDyn %>% left_join(rec_pars_detBRF)
+  Summary_PopDyn = Summary_PopDyn %>%
+    left_join(model$input$weight_data %>% gather(key = Stock_ID,value=Weight,-Year) %>%
+                mutate(Stock_ID = as.numeric(Stock_ID))) %>%
+    mutate(MSY = MSY_in_number*Weight*model$input$scale_num_to_mass)
+  Summary_PopDyn
 }

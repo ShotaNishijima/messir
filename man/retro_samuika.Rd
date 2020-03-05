@@ -9,7 +9,8 @@ retro_samuika(
   samuika_res,
   n = 5,
   first_remove_catch_year = NULL,
-  first_remove_index_year = NULL
+  first_remove_index_year = NULL,
+  use_p0 = FALSE
 )
 }
 \arguments{

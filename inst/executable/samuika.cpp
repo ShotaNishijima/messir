@@ -16,6 +16,8 @@ Type objective_function<Type>::operator() ()
   DATA_IVECTOR(SDlogF_key); //c(0,1) or c(0,0)
   DATA_INTEGER(logF_diff); // 0: 0 difference, 1:difference
   DATA_IVECTOR(F_incl_w); //NYear vector
+  // DATA_SCALAR(lambda);
+  // DATA_INTEGER(add_fixed_F); //1: estimate additional fixed parameter for F, 0: not estimte, -1: minus F
 
   // Recruitment process data
   DATA_INTEGER(SR); //0:HS, 1:BH, 2:RI
@@ -57,6 +59,7 @@ Type objective_function<Type>::operator() ()
   // Fishing process parameters
   PARAMETER_VECTOR(logSDlogF); // log(SD) for random walk of logF: process error
   PARAMETER(rho_SDlogF); // correlation coefficient for random walk of logF
+  // PARAMETER_VECTOR(add_logF);
 
   // Recruitment process parameters
   PARAMETER_VECTOR(rec_loga); // log(a) for SR relation
@@ -132,6 +135,9 @@ Type objective_function<Type>::operator() ()
 
   Type nll=0;
 
+  // Type F_diff=0;
+  // vector<Type> add_F = exp(add_logF);
+  //
   if(logF_diff==0){
     for(int i=1;i<NYear;i++){
       if (F_incl_w(i)>0) {
@@ -353,6 +359,7 @@ Type objective_function<Type>::operator() ()
   ADREPORT(sum_logZ);
   ADREPORT(sum_logZ_w);
   ADREPORT(pred_N);
+  // ADREPORT(add_logF);
   // ADREPORT(rec_resid);
   // ADREPORT(shape);
 

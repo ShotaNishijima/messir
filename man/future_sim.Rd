@@ -13,7 +13,8 @@ future_sim(
   nsim = 1000,
   Fcurrent_year = NULL,
   SR = "HS",
-  rec_arg = list(a = NULL, b = NULL, sd = 0, rho = 0, resid = NULL),
+  rec_arg = list(a = NULL, b = NULL, sd = 0, rho = 0, resampled_resid = NULL,
+    resid_for_bias_correction = NULL),
   bias_correct = TRUE,
   weight,
   num_to_mass_scale = 1/1000,
@@ -25,13 +26,19 @@ future_sim(
   Ftarget = NULL,
   array_to_tibble = FALSE,
   sim_rec_resid = NULL,
-  scenario_name = NULL
+  scenario_name = NULL,
+  use_Catch_est = FALSE,
+  rec_resid_resample = FALSE
 )
 }
 \arguments{
 \item{assess_data}{assessment data}
 
 \item{Fcurrent}{current fishing mortality coefficient}
+
+\item{sim_rec_resid}{matrix of sim_year x nsim, DON'T forget to accont for bias-corrected mean}
+
+\item{use_Catch_est}{whether replacing \code{Catch_biomass} by \code{Catch_est} in \code{assess_data}}
 }
 \description{
 future simulation for Surume-Ika
