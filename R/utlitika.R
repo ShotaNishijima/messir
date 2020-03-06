@@ -1112,6 +1112,8 @@ out_beta_table = function(future_HCR, SBmsy, Fmsy = NULL, beta = seq(0,1,by = 0.
     Pban = get_prob_ref(future_HCR2, ref_value = SBban)
 
     beta_table = future_HCR2$mean_table %>%
+      dplyr::select(Year,Stock_biomass,Spawning_biomass,Catch_biomass,F,
+                    Stock_number,Spawning_number,Status) %>%
       dplyr::filter(Status == "Future") %>%
       dplyr::mutate(Ptarget = Ptarget, Plimit = Plimit, Pban = Pban) %>%
       dplyr::mutate(scenario = paste0("beta=",beta2), beta = beta2,scenario_no = j)
@@ -1167,4 +1169,104 @@ out_beta_table = function(future_HCR, SBmsy, Fmsy = NULL, beta = seq(0,1,by = 0.
     dplyr::arrange(desc(scenario_no)) %>%
     dplyr::select(-scenario_no)
   write.csv(Pban_table, row.names = FALSE,file = paste0(filename,"_Pban.csv"))
+  RES = list(summary_table=summary_table2,catch_mean=catch_mean, stock_biomass_mean=stock_biomass_mean, spawning_biomass_mean=spawning_biomass_mean,
+             F_mean=F_mean,Ptarget=Ptarget_table,Plimit=Plimit_table,Pban=Pban_table)
+  return(RES)
+}
+
+
+#' output summary table when changing Fmulti
+#' @import ggplot2
+#' @import dplyr
+#' @import stringr
+#' @import magrittr
+#' @inheritParams get_prob_ref
+#' @param future_Fcurrent \code{future_sim} object with Fcurrent
+#' @param SBrefs Reference points for calculating achievement probability
+#' @param filename file name of saving
+#' @encoding UTF-8
+#' @export
+out_Fmulti_table = function(future_Fcurrent, SBrefs, Fmulti = seq(0,1,by = 0.1),scenario_name = NULL,filename = "Fmulti_table") {
+  if (is.null(names(SBrefs))) {
+    message("Use names(SBrefs) if one wants to give SBrefs names")
+    names(SBrefs) <- stringr::str_c("SBref",1:length(SBrefs))
+  }
+  Pname = stringr::str_c("P",names(SBrefs))
+
+  if (is.null(scenario_name)) {
+    scenario_name = stringr::str_c("Fmulti=",round(Fmulti_seq,3))
+  } else {
+    if (length(scenario_name) != length(Fmulti)) stop("Lengths of 'scenario_name' and 'Fmulti' must be same")
+  }
+
+  Fmulti_seq = Fmulti
+  for (j in 1:length(Fmulti_seq)) {
+    cat("---",j,"---\n")
+    input_tmp = future_Fcurrent$input
+    input_tmp$multi = Fmulti_seq[j]
+    future_Fmulti = do.call(future_sim, input_tmp)
+
+    Fmulti_table = future_Fmulti$mean_table %>%
+      dplyr::select(Year,Stock_biomass,Spawning_biomass,Catch_biomass,F,
+                    Stock_number,Spawning_number,Status) %>%
+      dplyr::filter(Status == "Future") %>%
+      dplyr::mutate(scenario = scenario_name[j], Fmulti = Fmulti_seq[j],scenario_no = j)
+
+    Pvalue = NULL
+    for (k in 1:length(SBrefs)) {
+      Pvalue = cbind(Pvalue,get_prob_ref(future_Fmulti, ref_value = SBrefs[k]))
+    }
+    Pyear = as.numeric(rownames(Pvalue))
+    Pvalue = as.data.frame(Pvalue) %>%
+      magrittr::set_colnames(value = Pname) %>%
+      dplyr::mutate(Year = Pyear)
+    Fmulti_table = full_join(Fmulti_table,Pvalue,by="Year")
+
+    if (j==1) {
+      summary_table = Fmulti_table
+    } else {
+      summary_table = full_join(summary_table, Fmulti_table)
+    }
+  }
+
+  summary_table2 = summary_table %>%
+    dplyr::select(-Stock_number, -Spawning_number, -Status) %>%
+    dplyr::select(scenario_no,scenario, Fmulti, Year,Stock_biomass,Spawning_biomass,Catch_biomass,everything())
+  write.csv(summary_table2, row.names = FALSE,file = paste0(filename,"_all.csv"))
+
+  catch_mean  = summary_table2 %>% dplyr::select(scenario_no,scenario, Fmulti, Year,Catch_biomass) %>%
+    tidyr::spread(key = Year, value = Catch_biomass) %>%
+    dplyr::arrange(desc(scenario_no)) %>%
+    dplyr::select(-scenario_no)
+  write.csv(catch_mean, row.names = FALSE,file = paste0(filename,"_Catch_biomass_mean.csv"))
+
+  stock_biomass_mean  = summary_table2 %>% dplyr::select(scenario_no,scenario, Fmulti, Year,Stock_biomass) %>%
+    tidyr::spread(key = Year, value = Stock_biomass) %>%
+    dplyr::arrange(desc(scenario_no)) %>%
+    dplyr::select(-scenario_no)
+  write.csv(stock_biomass_mean, row.names = FALSE,file = paste0(filename,"_Stock_biomass_mean.csv"))
+
+  spawning_biomass_mean  = summary_table2 %>% dplyr::select(scenario_no,scenario, Fmulti, Year,Spawning_biomass) %>%
+    tidyr::spread(key = Year, value = Spawning_biomass) %>%
+    dplyr::arrange(desc(scenario_no)) %>%
+    dplyr::select(-scenario_no)
+  write.csv(spawning_biomass_mean, row.names = FALSE,file = paste0(filename,"_Spawning_biomass_mean.csv"))
+
+  F_mean  = summary_table2 %>% dplyr::select(scenario_no,scenario, Fmulti, Year,F) %>%
+    tidyr::spread(key = Year, value = F) %>%
+    dplyr::arrange(desc(scenario_no)) %>%
+    dplyr::select(-scenario_no)
+  write.csv(F_mean, row.names = FALSE,file = paste0(filename,"_F_mean.csv"))
+  RES = list(summary_table=summary_table2,catch_mean=catch_mean, stock_biomass_mean=stock_biomass_mean, spawning_biomass_mean=spawning_biomass_mean,
+             F_mean=F_mean)
+
+  for (k in 1:length(Pname)) {
+    P_table  = summary_table2 %>% dplyr::select(scenario_no,scenario, Fmulti, Year,as.character(Pname[k])) %>%
+      tidyr::spread(key = Year, value = as.character(Pname[k])) %>%
+      dplyr::arrange(desc(scenario_no)) %>%
+      dplyr::select(-scenario_no)
+    write.csv(P_table, row.names = FALSE,file = paste0(filename,"_",Pname[k],".csv"))
+    RES[[Pname[k]]] = P_table
+  }
+  return(RES)
 }
