@@ -232,6 +232,7 @@ future_sim = function(
 
 
 #' Function for simulating recruitment residuals with consideration for bias correction (if neccessary)
+#' @importFrom frasyr sample_backward
 #' @encoding UTF-8
 #' @export
 simulate_rec_resid = function(sd,rho=0,resample = FALSE,resampled_resid=NULL,bias_correct=TRUE,resid_for_bias_correction=NULL,year=NULL,nsim=NULL,seed=1,out="resid",
@@ -251,7 +252,7 @@ simulate_rec_resid = function(sd,rho=0,resample = FALSE,resampled_resid=NULL,bia
     }
     bias_corrected_mean = ifelse(bias_correct, -log(mean(exp(resid_for_bias_correction))),0)
     if (backward_resample) {
-      sim_rec_resid = bias_corrected_mean + sapply(1:nsim, function(x) sample_backward(resampled_resid,n=year,duration=duration))
+      sim_rec_resid = bias_corrected_mean + sapply(1:nsim, function(x) frasyr::sample_backward(resampled_resid,n=year,duration=duration))
       } else {
         sim_rec_resid = sample(resampled_resid, size=year*nsim, replace=TRUE) + bias_corrected_mean
       }
