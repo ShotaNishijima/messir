@@ -23,6 +23,10 @@ NULL
 #' @param Fcurrent current fishing mortality coefficient
 #' @param use_Catch_est whether replacing \code{Catch_biomass} by \code{Catch_est} in \code{assess_data}
 #' @param sim_rec_resid matrix of sim_year x nsim, DON'T forget to accont for bias-corrected mean
+#' @param use_Catch_est whether using catch biomass estimated by \code{samuika}
+#' @param use_resid_resample nonperametric resampling of \code{rec_arg$resampled resid}
+#' @param backward_resample whether using backward resampling
+#' @param backward_block_duration duration of block of backward resampling (default: 5 years)
 #' @encoding UTF-8
 #' @export
 future_sim = function(
@@ -48,7 +52,9 @@ future_sim = function(
   sim_rec_resid = NULL, # matrix of sim_year X nsim
   scenario_name = NULL,
   use_Catch_est = FALSE,
-  rec_resid_resample = FALSE
+  rec_resid_resample = FALSE,
+  backward_resample = FALSE,
+  backward_block_duration = 5
 ) {
 
   argname = ls()
@@ -125,18 +131,23 @@ future_sim = function(
   }
 
   if (is.null(sim_rec_resid)) {
-    # set.seed(seed)
-    if (rec_resid_resample) {
-      if (is.null(rec_arg$resampled_resid)) {
-        warning("Please include residuals in 'rec_arg$resampled_resid'")
-      }
+    if (backward_resample) {
       sim_array[,"rec_resid_excl_AR",] <- simulate_rec_resid(sd=NULL,rho=rec_arg$rho,resample = TRUE,resampled_resid=rec_arg$resampled_resid,
                                                              bias_correct=bias_correct,resid_for_bias_correction=rec_arg$resid_for_bias_correction,
-                                                             year=sim_year,nsim=nsim,seed=seed)
+                                                             year=sim_year,nsim=nsim,seed=seed,backward_resample=TRUE, duration = backward_block_duration)
     } else {
-      sim_array[,"rec_resid_excl_AR",] <- simulate_rec_resid(sd=rec_arg$sd,rho=rec_arg$rho,resample = FALSE,resampled_resid=NULL,
-                                                             bias_correct=bias_correct,resid_for_bias_correction=NULL,
-                                                             year=sim_year,nsim=nsim,seed=seed)
+      if (rec_resid_resample) {
+        if (is.null(rec_arg$resampled_resid)) {
+          stop("Please set residuals in 'rec_arg$resampled_resid' for 'rec_resid_resample = TRUE'")
+        }
+        sim_array[,"rec_resid_excl_AR",] <- simulate_rec_resid(sd=NULL,rho=rec_arg$rho,resample = TRUE,resampled_resid=rec_arg$resampled_resid,
+                                                               bias_correct=bias_correct,resid_for_bias_correction=rec_arg$resid_for_bias_correction,
+                                                               year=sim_year,nsim=nsim,seed=seed,backward_resample=FALSE, duration=NULL)
+      } else {
+        sim_array[,"rec_resid_excl_AR",] <- simulate_rec_resid(sd=rec_arg$sd,rho=rec_arg$rho,resample = FALSE,resampled_resid=NULL,
+                                                               bias_correct=bias_correct,resid_for_bias_correction=NULL,
+                                                               year=sim_year,nsim=nsim,seed=seed,backward_resample=FALSE,duration=NULL)
+      }
     }
   } else {
     sim_array[,"rec_resid_excl_AR",] <- sim_rec_resid
@@ -223,18 +234,27 @@ future_sim = function(
 #' Function for simulating recruitment residuals with consideration for bias correction (if neccessary)
 #' @encoding UTF-8
 #' @export
-simulate_rec_resid = function(sd,rho=0,resample = FALSE,resampled_resid=NULL,bias_correct=TRUE,resid_for_bias_correction=NULL,year=NULL,nsim=NULL,seed=1,out="resid") {
+simulate_rec_resid = function(sd,rho=0,resample = FALSE,resampled_resid=NULL,bias_correct=TRUE,resid_for_bias_correction=NULL,year=NULL,nsim=NULL,seed=1,out="resid",
+                              backward_resample = FALSE, duration = 5) {
   set.seed(seed)
+  if (!isTRUE(resample) && backward_resample) {
+    message("'resample' is automatially turn into TRUE in 'simulate_rec_resid'")
+    resample = TRUE
+  }
   if (resample) {
     if (rho !=0 ) {
-      warning("'rho' cannot be considered when using resample=TRUE and is automatically set at zero")
+      message("'rho' is ignored when using resample=TRUE and is automatically set at zero")
     }
     if (is.null(resid_for_bias_correction) && bias_correct) {
-      warning("Residuals for bias correction are assumed to be identical to resampled residuals")
+      message("Residuals for bias correction are assumed to be identical to resampled residuals")
       resid_for_bias_correction = resampled_resid
     }
     bias_corrected_mean = ifelse(bias_correct, -log(mean(exp(resid_for_bias_correction))),0)
-    sim_rec_resid = sample(resampled_resid, size=year*nsim, replace=TRUE) + bias_corrected_mean
+    if (backward_resample) {
+      sim_rec_resid = bias_corrected_mean + sapply(1:nsim, function(x) sample_backward(resampled_resid,n=year,duration=duration))
+      } else {
+        sim_rec_resid = sample(resampled_resid, size=year*nsim, replace=TRUE) + bias_corrected_mean
+      }
   } else {
     sigma = sqrt(sd^2/(1-rho^2)) #recruitment variance including autocorrelation
     bias_corrected_mean = ifelse(bias_correct, -0.5*sigma^2,0)

@@ -15,7 +15,9 @@ simulate_rec_resid(
   year = NULL,
   nsim = NULL,
   seed = 1,
-  out = "resid"
+  out = "resid",
+  backward_resample = FALSE,
+  duration = 5
 )
 }
 \description{
