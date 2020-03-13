@@ -182,6 +182,9 @@ samuika = function(
       message("'logZ_sd' is not usable when 'logZ_mean' is null")
     }
     if (!is.null(logZ_weight)) {
+      if (nrow(logZ_weight) != nrow(weight_data)) {
+        stop("The dimensions of 'logZ_weight' and 'weight_data' should be matched")
+      }
       if (!is.null(add_cpue)) {
         message("'logZ_weight' is used for add_cpue")
       } else {
