@@ -19,7 +19,8 @@ visualize_future(
   strip_text_size = 10,
   base_size = 16,
   BRP_line_size = 1,
-  palette_name = "Set1"
+  palette_name = "Set1",
+  alpha = 0.4
 )
 }
 \arguments{

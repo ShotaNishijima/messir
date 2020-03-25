@@ -28,7 +28,9 @@ future_sim(
   sim_rec_resid = NULL,
   scenario_name = NULL,
   use_Catch_est = FALSE,
-  rec_resid_resample = FALSE
+  rec_resid_resample = FALSE,
+  backward_resample = FALSE,
+  backward_block_duration = 5
 )
 }
 \arguments{
@@ -38,7 +40,13 @@ future_sim(
 
 \item{sim_rec_resid}{matrix of sim_year x nsim, DON'T forget to accont for bias-corrected mean}
 
-\item{use_Catch_est}{whether replacing \code{Catch_biomass} by \code{Catch_est} in \code{assess_data}}
+\item{use_Catch_est}{whether using catch biomass estimated by \code{samuika}}
+
+\item{backward_resample}{whether using backward resampling}
+
+\item{backward_block_duration}{duration of block of backward resampling (default: 5 years)}
+
+\item{use_resid_resample}{nonperametric resampling of \code{rec_arg$resampled resid}}
 }
 \description{
 future simulation for Surume-Ika
