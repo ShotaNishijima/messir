@@ -1014,7 +1014,7 @@ plot_spawning_biomass = function(model,CI=0.8,plot_CI=TRUE,Stock_name=NULL,
 #' @export
 plot_F = function(model,CI=0.8,plot_CI=TRUE,Stock_name=NULL,
                                  base_size=18,path_size=1.5,colour="blue",point_size=2,
-                                 alpha=0.4,scales="fix",add_MSY,
+                                 alpha=0.4,scales="fix",add_MSY=FALSE,
                                  MSY_path_size=1,MSY_path_colour = "orange",MSY_path_linetype = "dashed"){
   data_est = out_summary_estimate(model,CI=CI) %>%
     filter(category == "F")
@@ -1269,4 +1269,96 @@ out_Fmulti_table = function(future_Fcurrent, SBrefs, Fmulti = seq(0,1,by = 0.1),
     RES[[Pname[k]]] = P_table
   }
   return(RES)
+}
+
+
+#' Output summary table for bootstrapped samuika
+#' @inheritParams samuika
+#' @param boot_res \code{boot_samuika} object
+#' @encoding UTF-8
+#' @export
+out_boot_table = function(boot_res, CI_range = 0.8) {
+  RES = list()
+  for(i in 1:length(boot_res)) {
+    table_tmp = boot_res[[i]]$Summary_PopDyn %>% dplyr::mutate(boot_ID = i)
+    if (i==1) {
+      all_table = table_tmp
+    } else {
+      all_table = dplyr::bind_rows(all_table, table_tmp)
+    }
+  }
+  tmp = dplyr::select(all_table,-Stock_number_pred,-rec_resid,-Catch_resid) %>%
+    dplyr::select(boot_ID,everything()) %>%
+    tidyr::gather(key = "Key", value = "Value", -boot_ID,-Stock_ID,-Year,-Regime)
+  summary_table = tmp %>%
+    group_by(Key,Stock_ID,Year,Regime) %>%
+    summarise(Mean = mean(Value,na.rm=TRUE), Median = median(Value,na.rm=TRUE),
+              Lower = quantile(Value, probs = (1-CI_range)/2,na.rm=TRUE),
+              Upper = quantile(Value, probs = 1-(1-CI_range)/2,na.rm=TRUE))
+  RES$all_table = all_table
+  RES$summary_table = summary_table
+  return(RES)
+}
+
+#' plot of bootstrapped stock number
+#' @inheritParams out_boot_table
+#' @inheritParams plot_stock_number
+#' @param res \code{samuika} object
+#' @param boot_res \code{boot_samuika} object
+#' @encoding UTF-8
+#' @export
+plot_boot_stock_number = function(res, boot_res, CI=0.8, Stock_name = NULL,alpha=0.3,path_size=1.5,colour="red",...) {
+  g1 = plot_stock_number(res,Stock_name=Stock_name,plot_CI=FALSE,plot_obs=FALSE,path_size=path_size,...)
+  summary_boot = out_boot_table(boot_res,CI_range=CI)$summary_table %>%
+    dplyr::filter(Key == "Stock_number")
+  if (is.null(Stock_name)) {
+    summary_boot = summary_boot %>% mutate(Stock_name = as.character(Stock_ID))
+  } else {
+    summary_boot$Stock_name = Stock_name[summary_boot$Stock_ID+1]
+  }
+  g2 = g1 + geom_ribbon(data=summary_boot, aes(x=Year,ymin=Lower,ymax=Upper),alpha=alpha,fill=colour)+
+    geom_path(data=summary_boot, aes(x=Year,y=Median),size=path_size,colour=colour,linetype = "dashed")
+  g2
+}
+
+#' plot of bootstrapped fishing mortality coefficient
+#' @inheritParams out_boot_table
+#' @inheritParams plot_F
+#' @param res \code{samuika} object
+#' @param boot_res \code{boot_samuika} object
+#' @encoding UTF-8
+#' @export
+plot_boot_F = function(res, boot_res, CI=0.8, Stock_name = NULL,alpha=0.3,path_size=1.5,colour="red",...) {
+  g1 = plot_F(res,Stock_name=Stock_name,plot_CI=FALSE,path_size=path_size,...)
+  summary_boot = out_boot_table(boot_res,CI_range=CI)$summary_table %>%
+    dplyr::filter(Key == "F")
+  if (is.null(Stock_name)) {
+    summary_boot = summary_boot %>% mutate(Stock_name = as.character(Stock_ID))
+  } else {
+    summary_boot$Stock_name = Stock_name[summary_boot$Stock_ID+1]
+  }
+  g2 = g1 + geom_ribbon(data=summary_boot, aes(x=Year,ymin=Lower,ymax=Upper),alpha=alpha,fill=colour)+
+    geom_path(data=summary_boot, aes(x=Year,y=Median),size=path_size,colour=colour,linetype = "dashed")
+  g2
+}
+
+#' plot of bootstrapped Catch
+#' @inheritParams out_boot_table
+#' @inheritParams plot_catch
+#' @param res \code{samuika} object
+#' @param boot_res \code{boot_samuika} object
+#' @encoding UTF-8
+#' @export
+plot_boot_catch_obs = function(res, boot_res, CI=0.8, Stock_name = NULL,alpha=0.3,path_size=1.5,colour="red",...) {
+  g1 = plot_catch(res,Stock_name=Stock_name,plot_CI=FALSE,path_size=path_size,plot_obs=TRUE,add_MSY=FALSE)
+  summary_boot = out_boot_table(boot_res,CI_range=CI)$summary_table %>%
+    dplyr::filter(Key == "Catch_biomass")
+  if (is.null(Stock_name)) {
+    summary_boot = summary_boot %>% mutate(Stock_name = as.character(Stock_ID))
+  } else {
+    summary_boot$Stock_name = Stock_name[summary_boot$Stock_ID+1]
+  }
+  g2 = g1 + geom_ribbon(data=summary_boot, aes(x=Year,ymin=Lower,ymax=Upper),alpha=alpha,fill=colour)+
+    geom_path(data=summary_boot, aes(x=Year,y=Median),size=path_size,colour=colour,linetype = "dashed")
+  g2
 }

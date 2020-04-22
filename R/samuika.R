@@ -758,3 +758,36 @@ integrate_detBRF = function(model, M = model$input$M) {
     mutate(MSY = MSY_in_number*Weight*model$input$scale_num_to_mass)
   Summary_PopDyn
 }
+
+#' Bootstrap samuika
+#' @inheritParams samuika
+#' @param model \code{samuika} object
+#' @param n the number of bootstrap replicates
+#' @param seed seed for \code{set.seed}
+#' @encoding UTF-8
+#' @export
+boot_samuika = function(model, n = 100, seed = 1, bias_correct = model$input$bias_correct) {
+  if (!is.null(model$input$add_cpue)) {
+    warning("data for 'add_cpue' can not be bootstrapped at present")
+  }
+  boot_list = list()
+  set.seed(seed)
+  for (i in 1:n) {
+    cat("-----",i,"-----\n")
+   for(j in 1:100) {
+     sim = model$obj$simulate()
+     Index = sim$Index
+     Catch = sim$Catch
+     input_tmp = model$input
+     input_tmp$catch_data$Catch_biomass = Catch
+     input_tmp$index_data$Index = Index
+     input_tmp$p0_list = model$par_list
+     input_tmp$bias_correct = bias_correct
+     input_tmp$silent = TRUE
+     boot = try(do.call(samuika, input_tmp))
+     if (class(boot)=="samuika" && !is.null(boot$N_est) && !is.null(boot$F_est) && sum(boot$N_est<1.0e-3)==0 && sum(boot$F_est<1.0e-3)==0) break
+   }
+    boot_list[[i]] = boot
+  }
+  return(boot_list)
+}
