@@ -7,7 +7,7 @@
 \usage{
 use_est_MSY_tmb(
   TmbFile = "est_MSY_tmb",
-  CppDir = system.file("inst/executable", package = "messir"),
+  CppDir = system.file("executable", package = "messir"),
   RunDir = getwd(),
   overwrite = FALSE
 )

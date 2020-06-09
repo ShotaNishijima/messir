@@ -16,7 +16,7 @@ plot_F(
   point_size = 2,
   alpha = 0.4,
   scales = "fix",
-  add_MSY,
+  add_MSY = FALSE,
   MSY_path_size = 1,
   MSY_path_colour = "orange",
   MSY_path_linetype = "dashed"
