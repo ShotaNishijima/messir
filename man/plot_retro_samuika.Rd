@@ -11,11 +11,17 @@ plot_retro_samuika(
   Stock_ID = 0,
   latest_year = NULL,
   max_retro_year = NULL,
-  forecast_year = 0
+  forecast_year = 0,
+  is_number = FALSE,
+  only_NF = FALSE
 )
 }
 \arguments{
 \item{samuika_retro}{samuika_retro object}
+
+\item{is_number}{whether stock and spawning numbers are plotted instead of biomass}
+
+\item{only_NF}{whether plot only N and F (remove S and C)}
 }
 \description{
 plotting retrospective analyses of samuika

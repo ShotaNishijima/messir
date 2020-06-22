@@ -138,7 +138,7 @@ future_sim = function(
     } else {
       if (rec_resid_resample) {
         if (is.null(rec_arg$resampled_resid)) {
-          stop("Please set residuals in 'rec_arg$resampled_resid' for 'rec_resid_resample = TRUE'")
+          stop("Please set residuals in 'rec_arg$resampled_resid' when 'rec_resid_resample = TRUE'")
         }
         sim_array[,"rec_resid_excl_AR",] <- simulate_rec_resid(sd=NULL,rho=rec_arg$rho,resample = TRUE,resampled_resid=rec_arg$resampled_resid,
                                                                bias_correct=bias_correct,resid_for_bias_correction=rec_arg$resid_for_bias_correction,
@@ -155,7 +155,7 @@ future_sim = function(
   if (rec_resid_resample) {
     if (is.null(rec_arg$resid_for_bias_correction) && bias_correct) {
       warning("Residuals for bias correction are assumed to be identical to resampled residuals")
-      rec_arg$resid_for_bias_correction = resampled_resid
+      rec_arg$resid_for_bias_correction = rec_arg$resampled_resid
     }
     bias_corrected_mean = ifelse(bias_correct, -log(mean(exp(rec_arg$resid_for_bias_correction))),0)
   } else {

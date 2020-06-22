@@ -292,11 +292,14 @@ plot_samuika_estimates = function(list_samuika_res,
 #' @importFrom  dplyr select
 #' @importFrom  dplyr filter
 #' @param samuika_retro samuika_retro object
+#' @param is_number whether stock and spawning numbers are plotted instead of biomass
+#' @param only_NF whether plot only N and F (remove S and C)
 #' @encoding UTF-8
 #' @export
 plot_retro_samuika=function(samuika_retro,
                             mohn=NULL,Stock_ID=0,latest_year=NULL,
-                            max_retro_year = NULL,forecast_year=0) {
+                            max_retro_year = NULL,forecast_year=0,
+                            is_number = FALSE, only_NF = FALSE) {
   message(paste0("plotting Stock_ID=",Stock_ID," OK?"))
   if (is.null(latest_year)) {
     latest_year = max(samuika_retro$Summary_PopDyn$Year)
@@ -308,11 +311,30 @@ plot_retro_samuika=function(samuika_retro,
   retro_table = samuika_retro$Summary_PopDyn %>%
     mutate(eval_year = latest_year+forecast_year-retro_year) %>%
     filter(Year < eval_year+forecast_year+1) %>%
-    filter(Stock_ID == Stock_ID_dbl) %>%
-    dplyr::select(Stock_ID, Year, Stock_biomass, Spawning_biomass, F, Catch_est, retro_year) %>%
-    gather(key=variable, value=value, -Stock_ID, -Year, -retro_year) %>%
-    mutate(variable_f = factor(variable, levels=c("Stock_biomass","Spawning_biomass","F","Catch_est")),
-           retro_year_f = factor(retro_year, levels=0:max_retro_year))
+    filter(Stock_ID == Stock_ID_dbl)
+  if (is_number) {
+    retro_table = retro_table %>%
+      dplyr::select(Stock_ID, Year, Stock_number, Spawning_number, F, Catch_est, retro_year) %>%
+      gather(key=variable, value=value, -Stock_ID, -Year, -retro_year)
+    retro_table = retro_table %>%
+      mutate(variable_f = factor(variable, levels=c("Stock_number","Spawning_number","F","Catch_est")),
+             retro_year_f = factor(retro_year, levels=0:max_retro_year))
+    if (only_NF) {
+      retro_table = retro_table %>%
+        filter(variable == "Stock_number"|variable == "F")
+    }
+  } else {
+    retro_table = retro_table %>%
+      dplyr::select(Stock_ID, Year, Stock_biomass, Spawning_biomass, F, Catch_est, retro_year) %>%
+      gather(key=variable, value=value, -Stock_ID, -Year, -retro_year)
+    retro_table = retro_table %>%
+      mutate(variable_f = factor(variable, levels=c("Stock_biomass","Spawning_biomass","F","Catch_est")),
+             retro_year_f = factor(retro_year, levels=0:max_retro_year))
+    if (only_NF) {
+      retro_table = retro_table %>%
+        filter(variable == "Stock_biomass"|variable == "F")
+    }
+  }
 
   max_value = retro_table %>% group_by(variable_f) %>%
     summarise(value=max(value)*1.15,Year=min(Year))
@@ -326,12 +348,30 @@ plot_retro_samuika=function(samuika_retro,
     ylim(0,NA)
 
   if (!is.null(mohn)) {
-    rho_data = mohn$Summary %>%
-      dplyr::filter(Stock_ID==Stock_ID_dbl) %>%
-      dplyr::select(-N,-SSN) %>%
-      rename(Stock_biomass=B,Spawning_biomass=SSB,Catch_est=Catch) %>%
-      gather(key=variable,value=rho,-Stock_ID) %>%
-      mutate(variable_f = factor(variable, levels=c("Stock_biomass","Spawning_biomass","F","Catch_est"))) %>%
+    if (is_number) {
+      rho_data = mohn$Summary %>%
+        dplyr::filter(Stock_ID==Stock_ID_dbl) %>%
+        dplyr::select(-B,-SSB) %>%
+        rename(Stock_number=N,Spawning_number=SSN,Catch_est=Catch) %>%
+        gather(key=variable,value=rho,-Stock_ID) %>%
+        mutate(variable_f = factor(variable, levels=c("Stock_number","Spawning_number","F","Catch_est")))
+      if (only_NF) {
+        rho_data = rho_data %>%
+          filter(variable == "Stock_number"|variable == "F")
+      }
+    } else {
+      rho_data = mohn$Summary %>%
+        dplyr::filter(Stock_ID==Stock_ID_dbl) %>%
+        dplyr::select(-N,-SSN) %>%
+        rename(Stock_biomass=B,Spawning_biomass=SSB,Catch_est=Catch) %>%
+        gather(key=variable,value=rho,-Stock_ID) %>%
+        mutate(variable_f = factor(variable, levels=c("Stock_biomass","Spawning_biomass","F","Catch_est")))
+      if (only_NF) {
+        rho_data = rho_data %>%
+          filter(variable == "Stock_biomass"|variable == "F")
+      }
+    }
+    rho_data = rho_data %>%
       mutate(label=sprintf("rho == %.2f",rho)) %>%
       mutate(Year=min(retro_table$Year),value=max_value$value)
     g4 = g4 +
