@@ -18,7 +18,8 @@ Imports:
     ggrepel,
     stringr,
     magrittr,
-    frasyr
+    frasyr,
+    purrr
 Suggests:
     testthat
 Depends: R (>= 3.5.0)
