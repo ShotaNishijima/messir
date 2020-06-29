@@ -180,7 +180,7 @@ future_sim = function(
       sim_array[y,"Stock_number",] = sim_array[y,"rec_pred_incl_AR",]*exp(sim_array[y,"rec_resid_excl_AR",])
       sim_array[y,"rec_deviance_to_SR",] = log(sim_array[y,"Stock_number",]/sim_array[y,"rec_pred_by_SR",])-bias_corrected_mean
       sim_array[y,"F",] = ifelse(sim_array[y,"Year",] %in% Fcurrent_year,Fcurrent,
-                                 F_func(sim_array[y-1,"Spawning_number",]))
+                                 sim_array[y-1,"Spawning_number",] %>% purrr::map_dbl(F_func))
       sim_array[y,"Spawning_number",] = sim_array[y,"Stock_number",]*exp(-sim_array[y,"F",]-sim_array[y,"M",])
       sim_array[y,"Catch_number",] = Catch_func(sim_array[y,"Stock_number",],sim_array[y,"F",],sim_array[y,"M",])
     }
