@@ -162,8 +162,12 @@ get_SRdata = function(model) {
 
 #' plotting Kobe chart
 #' @import ggplot2
+#' @import ggrepel
 #' @param assess_data assessment data
 #' @param SBrefs values of SBtarget, SBlimit, and SBban
+#' @param SBref_label labels for SSB reference points
+#' @param use_msy_column whether SBmsy and Fmsy in 'assess_data' are used (option for different MSY values due to regime shifts)
+#' @param sep_regime whether using different colours and linetypes between regimes
 #' @param Fmsy value of Fmsy
 #' @param labeled_year years to be labeled
 #' @param title figure title
@@ -174,23 +178,33 @@ visualize_kobe_chart = function(
   SBrefs = c("SBtarget","SBlimit","SBban"),
   Fmsy,
   # HCR = TRUE,
+  SBref_label = c("目標基準値案","限界管理基準値案","禁漁水準案"),
+  use_msy_column = FALSE,
+  sep_regime = FALSE,
   labeled_year = NULL,
-  title = NULL
+  title = NULL,
+  base_size=12
 ) {
-
-  assess_data = dplyr::mutate(assess_data,
-                              Fratio = F/Fmsy,
-                              SBratio = Spawning_biomass/SBrefs[1])
 
   if (is.null(labeled_year)) {
     labeled_year = c(assess_data$Year[assess_data$Year%%5==0],max(assess_data$Year))
   }
 
-  assess_data = dplyr::mutate(assess_data,
-                              Fratio = F/Fmsy,
-                              SBratio = Spawning_biomass/SBrefs[1]) %>%
-    mutate(label=if_else(Year %in% labeled_year, as.character(Year), ""))
+  if (use_msy_column) {
+    if (!("SBmsy" %in% colnames(assess_data)) || !("Fmsy" %in% colnames(assess_data))) {
+      stop("'SBmsy' and 'Fmsy' are needed in 'assess_data'")
+    }
 
+    assess_data = dplyr::mutate(assess_data,
+                                Fratio = F/Fmsy,
+                                SBratio = Spawning_biomass/SBmsy) %>%
+      mutate(label=if_else(Year %in% labeled_year, as.character(Year), ""))
+  } else {
+    assess_data = dplyr::mutate(assess_data,
+                                Fratio = F/Fmsy,
+                                SBratio = Spawning_biomass/SBrefs[1]) %>%
+      mutate(label=if_else(Year %in% labeled_year, as.character(Year), ""))
+  }
 
   xmax = max(assess_data$SBratio*1.1,2)
   ymax = max(assess_data$Fratio*1.2,2)
@@ -201,21 +215,33 @@ visualize_kobe_chart = function(
     geom_polygon(data = tibble(SBratio=c(1,1,xmax,xmax), Fratio=c(0,1,1,0)),
                  fill="olivedrab2")+
     geom_polygon(data = tibble(SBratio=c(0,0,1,1), Fratio=c(1,ymax,ymax,1)),
-                 fill="indianred1")+
-    geom_vline(xintercept=c(1,SBrefs[2]/SBrefs[1],SBrefs[3]/SBrefs[1]),
-               colour=c("#00533E","#edb918","#C73C2E"),size=1)+
-    annotate("text",label="SBmsy",x=1+0.1,y=ymax*0.95,size=5)+
-    annotate("text",label="SBlimit",x=SBrefs[2]/SBrefs[1]+0.1,y=ymax*0.95,size=5)+
-    annotate("text",label="SBban",x=SBrefs[3]/SBrefs[1]+0.1,y=ymax*0.95,size=5)+
-    annotate("text",label="Fmsy",x=xmax*0.95,y=1.1,size=5)+
-    geom_path(size=1.2) +
+                 fill="indianred1")
+
+  if (!is.null(SBrefs)) {
+    SBlabel_data = data.frame(SBratio = SBrefs/SBrefs[1],Fratio=ymax*0.9,label=SBref_label)
+    g1 = g1 + geom_vline(data = SBlabel_data,aes(xintercept=SBratio),
+                 colour=c("#00533E","#edb918","#C73C2E"),size=1)+
+      ggrepel::geom_label_repel(data = SBlabel_data,aes(x=SBratio,y=Fratio,label=label),nudge_y=ymax*0.95,direction="x",size=4)
+  }
+
+  if (sep_regime) {
+    if (!("Regime" %in% colnames(assess_data))) {
+      stop("'Regime' is needed in 'assess_data'")
+    }
+    g1 =  g1 + geom_path(size=1,aes(group=Regime,linetype=Regime,colour=Regime))+
+      scale_colour_brewer(palette="Set1")
+  } else {
+    g1 =  g1 + geom_path(size=1)
+  }
+
+  g1 =  g1 +
     geom_point(size=3, colour="white") +
-    ggrepel::geom_text_repel(aes(label=label),
-                             size=6,box.padding=0.5,segment.color="gray") +
     theme(legend.position="none") +
-    theme_bw(base_size=14)+
+    theme_bw(base_size=base_size)+
     coord_cartesian(xlim=c(0,xmax),ylim=c(0,ymax),expand=0) +
-    ylab("F/Fmsy") + xlab("SB/SBmsy")
+    ylab("F/Fmsy") + xlab("SB/SBmsy") +
+    ggrepel::geom_text_repel(aes(label=label),
+                             size=4,box.padding=0.5,segment.color="gray")
 
   if (!is.null(title)) g1 + ggtitle(title)
 
@@ -664,6 +690,8 @@ plot_SR_regime = function(list_samuika_res,
 #' @importFrom tidyr gather
 #' @param future_list list of \code{future_sim}
 #' @param title figure title
+#' @param what_center 'mean' (default), 'median' or 'geomean'
+#' @param CI_range range of confidence intervals (use 0 not to plot CI)
 #' @encoding UTF-8
 #' @export
 visualize_future = function(
@@ -675,6 +703,10 @@ visualize_future = function(
   # example_number = 0, # number of described simulations
   # seed = 12345, # seed for extracting examples
   BRP = NULL, # under consideration...
+  SBrefs = NULL,
+  Fmsy = NULL,
+  what_plot = c("Stock_biomass","Spawning_biomass","Catch_biomass","U","Fratio","F")[1:5],
+  ncol = 2,
   line_size = 1,
   legend_position = "right",
   legend_text_size = 1.2,
@@ -685,6 +717,13 @@ visualize_future = function(
   palette_name = "Set1",
   alpha = 0.4
 ) {
+
+  labeli = as_labeller(c("Stock_biomass" = "資源量（千トン）",
+                         "Spawning_biomass" = "親魚量（千トン）",
+                         "Catch_biomass" = "漁獲量（千トン）",
+                         "U" = "漁獲割合",
+                         "Fratio" = "F/Fmsy",
+                         "F" = "F"))
 
   if (is.null(scenario_name)) {
     for (i in 1:length(future_list)) {
@@ -718,38 +757,56 @@ visualize_future = function(
     }
   }
 
-  plot_data_all = dplyr::select(plot_data_all,
-                                Year,Stock_biomass,Spawning_biomass,Catch_biomass,F,
-                                Status,Scenario,Range) %>%
-    tidyr::gather(key=Y, value = value, Stock_biomass,Spawning_biomass,Catch_biomass,F)
+  if ("Fratio" %in% what_plot) {
+    if (is.null(Fmsy)) stop("'Fmsy' is neccessary to calculate Fratio")
+    plot_data_all = plot_data_all %>% dplyr::mutate(Fratio = F/Fmsy)
+  }
+
+  select_cols= c("Year",what_plot,"Status","Scenario","Range")
+
+  # plot_data_all = dplyr::select(plot_data_all,
+  #                               Year,Stock_biomass,Spawning_biomass,Catch_biomass,F,
+  #                               Status,Scenario,Range) %>%
+  plot_data_all = plot_data_all[,select_cols] %>%
+    tidyr::gather(key=Y, value = value, -Year,-Status,-Scenario,-Range)
   plot_data_all = plot_data_all %>%
     rename(Scenario0 = Scenario) %>%
-    mutate(Scenario = factor(Scenario0, levels=scenario_name)) %>%
-    select(-Scenario0)
+    dplyr::mutate(Scenario = factor(Scenario0, levels=scenario_name)) %>%
+    dplyr::select(-Scenario0)
 
+  # plot_data_center = mutate(plot_data_all,
+  #                           Y_f = factor(plot_data_all$Y,
+  #                                        levels=c("Stock_biomass","Spawning_biomass","Catch_biomass","F"))) %>%
   plot_data_center = mutate(plot_data_all,
                             Y_f = factor(plot_data_all$Y,
-                                         levels=c("Stock_biomass","Spawning_biomass","Catch_biomass","F"))) %>%
+                                         levels=what_plot)) %>%
     filter(Range == "center") %>%
     rename(Scenario0 = Scenario) %>%
     mutate(Scenario = factor(Scenario0, levels=scenario_name)) %>%
-    select(-Scenario0)
+    dplyr::select(-Scenario0)
 
+  # plot_data_CI =  mutate(plot_data_all,
+  #                        Y_f = factor(plot_data_all$Y,
+  #                                     levels=c("Stock_biomass","Spawning_biomass","Catch_biomass","F"))) %>%
   plot_data_CI =  mutate(plot_data_all,
                          Y_f = factor(plot_data_all$Y,
-                                      levels=c("Stock_biomass","Spawning_biomass","Catch_biomass","F"))) %>%
+                                      levels=what_plot)) %>%
     filter(Range != "center") %>%
     spread(key = Range, value=value) %>%
     rename(Scenario0 = Scenario) %>%
     mutate(Scenario = factor(Scenario0, levels=scenario_name)) %>%
-    select(-Scenario0)
+    dplyr::select(-Scenario0)
 
   g1 = ggplot(plot_data_center)
 
   if (!is.null(BRP)) {
-    BRP_tbl = dplyr::select(BRP,Definition,Stock_biomass,Spawning_biomass,Catch_biomass,F) %>%
+    if ("Fratio" %in% what_plot) {
+      BRP = BRP %>% dplyr::mutate(Fratio = F/Fmsy)
+    }
+    BRP_tbl = BRP[,c("Definition",what_plot)] %>%
       tidyr::gather(key=Y,value=value,-Definition) %>%
-      mutate(Y_f = factor(Y,levels=c("Stock_biomass","Spawning_biomass","Catch_biomass","F"))) %>%
+      # mutate(Y_f = factor(Y,levels=c("Stock_biomass","Spawning_biomass","Catch_biomass","F"))) %>%
+      mutate(Y_f = factor(Y,levels=what_plot)) %>%
       mutate(Def_f = factor(Definition,levels=BRP$Definition))
     g1 = g1 +
       geom_hline(data = BRP_tbl, aes(yintercept=value,linetype=Def_f),colour="darkgray",size=BRP_line_size)
@@ -769,7 +826,8 @@ visualize_future = function(
     geom_line(data = dplyr::filter(plot_data_center,Status=="Past"&Scenario==scenario_name[1]),
               aes(x=Year,y=value),size=line_size, colour="black") +
     scale_colour_brewer(palette=palette_name)+
-    facet_wrap(~Y_f, scales="free_y") +
+    # facet_wrap(~Y_f, scales="free_y",ncol=2) +
+    facet_wrap(~Y_f, scales="free_y",labeller=labeli,ncol=ncol) +
     ylim(0,NA) +
     theme_bw(base_size=base_size)+
     theme(axis.title.y = element_blank())+
@@ -1090,21 +1148,66 @@ plot_F = function(model,CI=0.8,plot_CI=TRUE,Stock_name=NULL,
 
 #' Function for visualizing yield curve from trace_future
 #' @import ggplot2
+#' @import ggrepel
+#' @import dplyr
 #' @param trace_future_res \code{trace_future} object
 #' @param title figure title
+#' @param base_size base_size used for ggplot
+#' @param future_res \code{future_sim} object to be plotted
+#' @param what_plot "mean" or "median" in plotting \code{future_res}
+#' @param SBrefs SSB reference points to be plotted (\code{c(SBtarget,SBlimit,SBban)})
+#' @param BRP_label labeling names for SSB reference points
 #' @encoding UTF-8
 #' @export
 visualize_yield_curve = function(trace_future_res,
-                                 title = NULL) {
-  alpha = 0.3
+                                 title = NULL,alpha=1,base_size=16,
+                                 future_res = NULL,
+                                 what_plot = "mean",SBrefs=NULL,
+                                 BRP_label = c("目標管理基準値案","限界管理基準値案","禁漁水準案"),
+                                 refs_color=c("#00533E","#edb918","#C73C2E")) {
   trace_table = trace_future_res$trace_table
+  ymax = trace_table$Catch_biomass %>% max
+  xmax = trace_table$Spawning_biomass %>% max
+  xlim.scale <- ylim.scale <- 1.1
+
   g1 = ggplot(trace_table,aes(x=Spawning_biomass, y=Catch_biomass)) +
     geom_ribbon(aes(ymin=0,ymax=Catch_biomass),
-                fill = "blue", alpha=0.4, colour = "blue", size = 1)+
-    ylim(0,NA) +
-    theme_bw(base_size=14)
-  if (!is.null(title))g1 = g1 + ggtitle(title)
-  (g1)
+                alpha=alpha, fill="lightblue",colour = "black", size = 1)+
+    # scale_fill_brewer() +
+    # ylim(0,NA) +
+    ylab("平均漁獲量（千トン）")+xlab("平均親魚量（千トン）")+
+    theme_bw(base_size=base_size)
+
+  if (!is.null(future_res)) {
+    if (what_plot=="mean") {
+      mean_dat = future_res$mean_table
+    } else {
+      mean_dat = future_res$median_table
+    }
+    ymax = max(ymax,mean_dat$Catch_biomass %>% max)
+    xmax = max(xmax,mean_dat$Spawning_biomass %>% max)
+    mean_dat = mean_dat %>% full_join(dplyr::filter(mean_dat, Status=="Past") %>%
+                                        dplyr::filter(Year == max(Year)) %>%
+                                        dplyr::mutate(Status="Future")) %>%
+      dplyr::arrange(Year,desc(Status))
+
+    g1 = g1 + geom_path(dat=mean_dat,
+                        aes(group=Status,colour=Status,linetype=NULL),size=1)+
+      scale_color_brewer(palette = "Dark2")+
+      coord_cartesian(xlim=c(0,xmax*xlim.scale),
+                      ylim=c(0,ymax*ylim.scale),expand=0)
+    if (!is.null(SBrefs)) {
+      label_data = data.frame(y=ymax,x=SBrefs,label=BRP_label)
+      g1 = g1 + geom_vline(data = label_data,aes(xintercept=x),lty="41",lwd=1,colour=refs_color)+
+        ggrepel::geom_label_repel(data=label_data,
+                                  aes(y=ymax*ylim.scale*0.85,
+                                      x=x,label=label),
+                                  direction="x",size=11*0.282,nudge_y=ymax*ylim.scale*0.9)
+    }
+
+  }
+  if (!is.null(title)) g1 = g1 + ggtitle(title)
+  (g1+frasyr::theme_SH())
 }
 
 
@@ -1402,3 +1505,39 @@ plot_boot_catch_obs = function(res, boot_res, CI=0.8, Stock_name = NULL,alpha=0.
     geom_path(data=summary_boot, aes(x=Year,y=Median),size=path_size,colour=colour,linetype = "dashed")
   g2
 }
+
+
+#' Plot to compare steady states against different F values
+#' @import ggplot2
+#' @import purrr
+#' @import stringr
+#' @param trace_list list of (multiple ) \code{trace_future} objects
+#' @encoding UTF-8
+#' @export
+compare_steady_state = function(trace_list,trace_name = NULL,base_size=16,Fmax=1.5) {
+  if (is.null(trace_name)) {
+    trace_name = 1:length(trace_list) %>% purrr::map_chr(function(i) stringr::str_c("s",i))
+  }
+  dfr = 1:length(trace_list) %>% purrr::map_dfr(function(i){ trace_list[[i]]$trace_table %>% dplyr::mutate(scenario=trace_name[i])})
+  dfr = dfr %>% dplyr::select(F,Stock_biomass,Spawning_biomass,Catch_biomass,scenario) %>%
+  dplyr::rename(漁獲量=Catch_biomass,資源量=Stock_biomass,親魚量=Spawning_biomass) %>%
+    tidyr::pivot_longer(cols=c("漁獲量","資源量","親魚量"),names_to="yaxis",values_to="value") %>%
+    dplyr::filter(F<Fmax)
+  g1 = ggplot(data=dfr,aes(x=F,y=value,group=scenario,linetype=scenario,colour=scenario))+
+    geom_path(size=1)+
+    facet_wrap(vars(yaxis),ncol=3,scales="free_y")+
+    theme_bw(base_size=base_size)+ylab("重量(千トン)")+
+    theme(legend.position="bottom")
+  g1
+}
+
+#' Plot Catch biomass against SSB under HCR
+#' @import ggplot2
+#' @param SBrefs vector of 'c("SBtarget","SBlimit","SBban")'
+#' @M natural mortality coefficient
+#' @Pope Pope equation (TRUE) or Baranov equation(FALSE)
+#' @encoding UTF-8
+#' @export
+# plot_Catch_HCR = function(SBrefs = c("SBtarget","SBlimit","SBban"),
+#                           Ftarget, #beta*Fmsy
+#                           M = 0.6){}

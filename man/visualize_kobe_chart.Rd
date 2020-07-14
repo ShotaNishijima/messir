@@ -9,8 +9,12 @@ visualize_kobe_chart(
   assess_data,
   SBrefs = c("SBtarget", "SBlimit", "SBban"),
   Fmsy,
+  SBref_label = c("目標基準値案", "限界管理基準値案", "禁漁水準案"),
+  use_msy_column = FALSE,
+  sep_regime = FALSE,
   labeled_year = NULL,
-  title = NULL
+  title = NULL,
+  base_size = 12
 )
 }
 \arguments{
@@ -19,6 +23,12 @@ visualize_kobe_chart(
 \item{SBrefs}{values of SBtarget, SBlimit, and SBban}
 
 \item{Fmsy}{value of Fmsy}
+
+\item{SBref_label}{labels for SSB reference points}
+
+\item{use_msy_column}{whether SBmsy and Fmsy in 'assess_data' are used (option for different MSY values due to regime shifts)}
+
+\item{sep_regime}{whether using different colours and linetypes between regimes}
 
 \item{labeled_year}{years to be labeled}
 

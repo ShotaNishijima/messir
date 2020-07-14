@@ -12,6 +12,11 @@ visualize_future(
   CI_range = 0.8,
   title = NULL,
   BRP = NULL,
+  SBrefs = NULL,
+  Fmsy = NULL,
+  what_plot = c("Stock_biomass", "Spawning_biomass", "Catch_biomass", "U", "Fratio",
+    "F")[1:5],
+  ncol = 2,
   line_size = 1,
   legend_position = "right",
   legend_text_size = 1.2,
@@ -25,6 +30,10 @@ visualize_future(
 }
 \arguments{
 \item{future_list}{list of \code{future_sim}}
+
+\item{what_center}{'mean' (default), 'median' or 'geomean'}
+
+\item{CI_range}{range of confidence intervals (use 0 not to plot CI)}
 
 \item{title}{figure title}
 }

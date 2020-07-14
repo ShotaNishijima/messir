@@ -5,12 +5,33 @@
 \alias{visualize_yield_curve}
 \title{Function for visualizing yield curve from trace_future}
 \usage{
-visualize_yield_curve(trace_future_res, title = NULL)
+visualize_yield_curve(
+  trace_future_res,
+  title = NULL,
+  alpha = 1,
+  base_size = 16,
+  future_res = NULL,
+  what_plot = "mean",
+  SBrefs = NULL,
+  BRP_label = c("目標管理基準値案", "限界管理基準値案",
+    "禁漁水準案"),
+  refs_color = c("#00533E", "#edb918", "#C73C2E")
+)
 }
 \arguments{
 \item{trace_future_res}{\code{trace_future} object}
 
 \item{title}{figure title}
+
+\item{base_size}{base_size used for ggplot}
+
+\item{future_res}{\code{future_sim} object to be plotted}
+
+\item{what_plot}{"mean" or "median" in plotting \code{future_res}}
+
+\item{SBrefs}{SSB reference points to be plotted (\code{c(SBtarget,SBlimit,SBban)})}
+
+\item{BRP_label}{labeling names for SSB reference points}
 }
 \description{
 Function for visualizing yield curve from trace_future
