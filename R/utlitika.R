@@ -1533,11 +1533,69 @@ compare_steady_state = function(trace_list,trace_name = NULL,base_size=16,Fmax=1
 
 #' Plot Catch biomass against SSB under HCR
 #' @import ggplot2
-#' @param SBrefs vector of 'c("SBtarget","SBlimit","SBban")'
-#' @M natural mortality coefficient
-#' @Pope Pope equation (TRUE) or Baranov equation(FALSE)
+#' @param SBtarget value of SBtarget
+#' @param future_HCR \code{future_sim} object with \code{HCR = TRUE}
 #' @encoding UTF-8
 #' @export
-# plot_Catch_HCR = function(SBrefs = c("SBtarget","SBlimit","SBban"),
-#                           Ftarget, #beta*Fmsy
-#                           M = 0.6){}
+plot_Catch_HCR = function(SBtarget,
+                          future_HCR, #beta*Fmsy
+                          length=1000,
+                          col.multi2currf="black",col.SBtarget="#00533E",
+                          col.SBlim="#edb918",col.SBban="#C73C2E",col.Ftarget="black",
+                          col.betaFtarget="gray",
+                          is.text=TRUE,
+                          RP.label=c("目標管理基準値案","限界管理基準値案","禁漁水準案")
+                          ){
+  if (future_HCR$input$HCR == FALSE) {
+    stop("'future_HCR' with 'HCR = TRUE' is needed")
+  } else {
+    SBlimit = future_HCR$input$SBrefs[1]
+    SBban = future_HCR$input$SBrefs[2]
+    Ftarget = future_HCR$input$Ftarget
+  }
+
+  calc_catch <- function(B, F, M=future_HCR$input$M, Pope=future_HCR$input$Pope){
+    if(isTRUE(Pope)){
+      total.catch <- B*(1-exp(-F))*exp(-M/2)
+    }
+    else{
+      total.catch <- B*(1-exp(-F-M))*F/(F+M)
+    }
+    return(total.catch)
+  }
+
+  F_HCR = function(x) {
+    ifelse(x<SBban,0, #Bban
+           ifelse(x<SBlimit,Ftarget*(x-SBban)/(SBlimit-SBban), #Blimit
+                  Ftarget))
+  }
+
+  dat_tmp = data.frame(SSB = seq(0,1.5*SBtarget,length=length)) %>%
+    mutate(SSN = SSB/(future_HCR$input$weight*future_HCR$input$num_to_mass_scale)) %>%
+    mutate(N = messir::SRF(a=future_HCR$input$rec_arg$a,b=future_HCR$input$rec_arg$b,SSN, SR = future_HCR$input$SR)) %>%
+    mutate(B = N*(future_HCR$input$weight*future_HCR$input$num_to_mass_scale)) %>%
+    mutate(F = F_HCR(SSB)) %>%
+    mutate(Catch = calc_catch(B=B,F=F))
+
+  g1 = ggplot(data=dat_tmp,aes(x=SSB,y=Catch))+
+    geom_path(size=1)+frasyr::theme_SH()+
+    xlab("親魚量（千トン）")+ylab("漁獲量（千トン）")+
+    geom_vline(xintercept = SBtarget, size = 0.9, linetype = "41", color = col.SBtarget) +
+    geom_vline(xintercept = SBlimit, size = 0.9, linetype = "41", color = col.SBlim) +
+    geom_vline(xintercept = SBban, size = 0.9, linetype = "41", color = col.SBban)
+
+  if(is.text) {
+    RPdata <- tibble(RP.label=RP.label, value=c(SBtarget, SBlimit, SBban),
+                     y=rep(max(dat_tmp$Catch)*0.9,3))
+    g1 <- g1 + ggrepel::geom_label_repel(data=RPdata,
+                                       mapping=aes(x=value, y=y, label=RP.label),
+                                       box.padding=0.5, nudge_y=1) #+
+    # geom_label(label="MSY", x=SBtarget*1.4/biomass.unit, y=MSY/biomass.unit)
+    #      geom_label(label=str_c(beta,"Fmsy"), x=SBtarget*1.3, y=beta*Ftarget)+
+    #        ylim(0,1.3)
+  }
+  g1
+}
+
+
+# calc_aav = function(future_res,year_range = NULL)
