@@ -49,11 +49,14 @@ out_summary_estimate <- function(model,CI=0.8) {
       category2 = case_when(category == "Catch_est" ~ "Catch",
                             category == "Biomass" ~ "Stock_biomass",
                             category == "Spawning_Biomass" ~ "Spawning_biomass",
-                            TRUE ~ category),
-      category_f2 = case_when(category_f == "Catch_est" ~ "Catch",
-                              category == "Biomass" ~ "Stock_biomass",
-                              category == "Spawning_Biomass" ~ "Spawning_biomass",
-                              TRUE ~ category_f)) %>%
+                            TRUE ~ category)
+      # ,
+      # category_f2 = case_when(category_f == "Catch_est" ~ "Catch",
+      #                         category_f == "Biomass" ~ "Stock_biomass",
+      #                         category_f == "Spawning_Biomass" ~ "Spawning_biomass",
+      #                         TRUE ~ category_f)
+      ) %>%
+    mutate(category_f2 = factor(category_f)) %>%
     dplyr::select(-category,-category_f)
 
   Summary_PopDyn = Summary_PopDyn %>%
